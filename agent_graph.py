@@ -1,6 +1,6 @@
 from typing import TypedDict, List, Annotated
 from langgraph.graph import StateGraph, END
-from agents import ManagerAgent, PrimaryResearcherAgent, ProductSpecialistAgent, ScraperFormatterAgent
+from agents import ManagerAgent, PrimaryResearcherAgent, ProductSpecialistAgent, ScraperFormatterAgent, ImageSearchAgent, PriceComparisonAgent
 from models import Product, ResearchResponse
 
 # Define State
@@ -15,6 +15,8 @@ manager = ManagerAgent()
 primary_researcher = PrimaryResearcherAgent()
 product_specialist = ProductSpecialistAgent()
 scraper_formatter = ScraperFormatterAgent()
+image_search_agent = ImageSearchAgent()
+price_comparison_agent = PriceComparisonAgent()
 
 # Define Nodes
 def manager_node(state: ShoppingState):
@@ -134,6 +136,73 @@ def product_specialist_node(state: ShoppingState):
             print(f"Error analyzing {candidate.get('name')}: {e}")
     return {"detailed_reports": reports}
 
+def image_search_node(state: ShoppingState):
+    """Find accurate product images for each product"""
+    print("Image Search Agent finding product images...")
+    enriched_reports = []
+    for report in state['detailed_reports']:
+        try:
+            product_name = report.get('name', '')
+            product_url = report.get('url', '')
+            
+            # Find images for this product
+            image_urls = image_search_agent.find_product_images(product_name, product_url)
+            
+            # Add images to the report
+            report['image_urls'] = image_urls
+            if image_urls and len(image_urls) > 0:
+                report['image_url'] = image_urls[0]  # Set primary image
+            
+            enriched_reports.append(report)
+        except Exception as e:
+            print(f"Error finding images for {report.get('name')}: {e}")
+            enriched_reports.append(report)
+    
+    return {"detailed_reports": enriched_reports}
+
+def price_comparison_node(state: ShoppingState):
+    """Compare prices across multiple retailers"""
+    print("Price Comparison Agent finding best deals...")
+    enriched_reports = []
+    for report in state['detailed_reports']:
+        try:
+            product_name = report.get('name', '')
+            
+            # Get price comparison data
+            price_data = price_comparison_agent.compare_prices(product_name)
+            
+            # Add price comparison data to the report
+            report['price_comparison'] = price_data.get('price_comparison', [])
+            report['cheapest_link'] = price_data.get('cheapest_link', '')
+            
+            # Update the main price if we found a cheaper one
+            if price_data.get('price_comparison'):
+                prices = []
+                for retailer_price in price_data['price_comparison']:
+                    try:
+                        price_val = retailer_price.get('price', 0)
+                        if isinstance(price_val, str):
+                            # Extract numeric value from string
+                            import re
+                            match = re.search(r'[\d,]+\.?\d*', str(price_val).replace(',', ''))
+                            if match:
+                                prices.append(float(match.group()))
+                        elif isinstance(price_val, (int, float)):
+                            prices.append(float(price_val))
+                    except:
+                        continue
+                
+                if prices:
+                    min_price = min(prices)
+                    report['price'] = f"${min_price:.2f}"
+            
+            enriched_reports.append(report)
+        except Exception as e:
+            print(f"Error comparing prices for {report.get('name')}: {e}")
+            enriched_reports.append(report)
+    
+    return {"detailed_reports": enriched_reports}
+
 def scraper_formatter_node(state: ShoppingState):
     print("Formatting final response...")
     response = scraper_formatter.format_results(state['detailed_reports'], state['query'])
@@ -149,12 +218,16 @@ workflow = StateGraph(ShoppingState)
 workflow.add_node("manager", manager_node)
 workflow.add_node("primary_researcher", primary_research_node)
 workflow.add_node("product_specialist", product_specialist_node)
+workflow.add_node("image_search", image_search_node)
+workflow.add_node("price_comparison", price_comparison_node)
 workflow.add_node("scraper_formatter", scraper_formatter_node)
 
 workflow.set_entry_point("manager")
 workflow.add_edge("manager", "primary_researcher")
 workflow.add_edge("primary_researcher", "product_specialist")
-workflow.add_edge("product_specialist", "scraper_formatter")
+workflow.add_edge("product_specialist", "image_search")
+workflow.add_edge("image_search", "price_comparison")
+workflow.add_edge("price_comparison", "scraper_formatter")
 workflow.add_edge("scraper_formatter", END)
 
 app = workflow.compile()

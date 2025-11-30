@@ -413,6 +413,8 @@
             "Manager Agent: Analyzing intent...",
             "Primary Researcher: Searching Tavily API...",
             "Product Specialist: Analyzing feature specs...",
+            "Image Search Agent: Finding product images...",
+            "Price Comparison Agent: Searching retailers...",
             "Product Specialist: Reading pros & cons...",
             "Formatter Agent: Compiling final JSON..."
         ];
@@ -506,15 +508,53 @@
 
                 const delay = (index + 2) * 0.1; // Stagger animation
 
-                // Image Fallback logic
-                const imgContent = product.image_url 
-                    ? `<img src="${product.image_url}" alt="${product.name}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700">`
+                // Image Gallery - Use multiple images if available
+                const imageUrls = product.image_urls && product.image_urls.length > 0 
+                    ? product.image_urls 
+                    : (product.image_url ? [product.image_url] : []);
+                
+                const primaryImage = imageUrls[0] || '';
+                
+                const imgContent = primaryImage
+                    ? `<img src="${primaryImage}" alt="${product.name}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700">`
                     : `<div class="w-full h-full flex items-center justify-center text-beige-300 bg-beige-100"><i class="fa-solid fa-image text-4xl opacity-50"></i></div>`;
+                
+                // Image indicator dots for multiple images
+                const imageIndicators = imageUrls.length > 1 
+                    ? `<div class="absolute bottom-3 left-1/2 transform -translate-x-1/2 flex gap-1.5">
+                        ${imageUrls.slice(0, 5).map((_, i) => 
+                            `<div class="w-1.5 h-1.5 rounded-full bg-white/60 backdrop-blur"></div>`
+                        ).join('')}
+                       </div>`
+                    : '';
+                
+                // Price comparison display
+                const priceComparisonHtml = product.price_comparison && product.price_comparison.length > 0
+                    ? `<div class="mb-4 bg-white border border-gray-200 rounded-xl p-3">
+                        <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Best Prices Found</div>
+                        ${product.price_comparison.slice(0, 3).map(retailer => `
+                            <div class="flex items-center justify-between text-xs mb-2 pb-2 border-b border-gray-100 last:border-0">
+                                <span class="font-medium text-gray-700">${retailer.retailer}</span>
+                                <a href="${retailer.url}" target="_blank" class="text-brand-orange hover:underline font-bold">
+                                    ${typeof retailer.price === 'number' ? '$' + retailer.price.toFixed(2) : retailer.price}
+                                </a>
+                            </div>
+                        `).join('')}
+                        ${product.cheapest_link ? `
+                            <a href="${product.cheapest_link}" target="_blank" class="mt-2 flex items-center justify-center w-full bg-green-50 text-green-700 font-medium py-2 px-3 rounded-lg hover:bg-green-100 transition-all text-xs gap-1.5">
+                                <i class="fa-solid fa-tag"></i>
+                                <span>Best Deal</span>
+                                <i class="fa-solid fa-external-link-alt text-[10px] opacity-70"></i>
+                            </a>
+                        ` : ''}
+                       </div>`
+                    : '';
 
                 const cardHTML = `
                 <div class="bg-white rounded-3xl overflow-hidden border border-gray-100 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full fade-in-up group" style="animation-delay: ${delay}s">
                     <div class="h-56 bg-gray-100 relative overflow-hidden">
                         ${imgContent}
+                        ${imageIndicators}
                         <div class="absolute top-4 right-4 bg-white/95 backdrop-blur px-4 py-1.5 rounded-full text-sm font-bold shadow-sm text-brand-black">
                             ${priceDisplay}
                         </div>
@@ -531,6 +571,8 @@
                             <h3 class="font-display font-bold text-xl leading-snug line-clamp-2 mb-1 group-hover:text-brand-orange transition-colors" title="${product.name}">${product.name}</h3>
                             <div class="text-xs text-gray-400 font-mono">${product.reviews_count || 'Unknown'} verified reviews</div>
                         </div>
+
+                        ${priceComparisonHtml}
 
                         <div class="mb-6 flex-grow bg-beige-50/50 p-4 rounded-xl">
                             <h4 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">KEY FINDINGS</h4>

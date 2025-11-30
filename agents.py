@@ -4,8 +4,9 @@ from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
 from langchain_tavily import TavilySearch
+from langchain_community.tools import DuckDuckGoSearchResults
 from dotenv import load_dotenv
-from models import Product, ResearchResponse
+from models import Product, ResearchResponse, RetailerPrice
 import json
 import re
 
@@ -31,6 +32,7 @@ gemini_llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", google_api_key=
 # Using Groq for fast, parallel research tasks
 # Tools
 tavily_tool = TavilySearch(max_results=5)
+ddg_search = DuckDuckGoSearchResults(max_results=10)
 
 class ManagerAgent:
     def __init__(self):
@@ -91,3 +93,74 @@ class ScraperFormatterAgent:
         chain = prompt | self.llm | StrOutputParser()
         response_text = chain.invoke({"original_query": original_query, "products_data": products_data})
         return parse_json_output(response_text)
+
+class ImageSearchAgent:
+    """Agent specialized in finding accurate product images"""
+    def __init__(self):
+        self.llm = gemini_llm
+        self.search_tool = ddg_search
+
+    def find_product_images(self, product_name: str, product_url: str = ""):
+        """Find high-quality product images using DuckDuckGo image search"""
+        try:
+            # Search for product images
+            search_query = f"{product_name} product official image"
+            search_results = self.search_tool.invoke({"query": search_query})
+            
+            # Use LLM to extract and validate image URLs
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", """You are an Image Specialist. Extract valid image URLs from search results.
+Return ONLY a JSON object with 'image_urls' (array of up to 5 valid image URLs).
+Prioritize official product images, high-resolution images, and images from reputable retailers.
+Do not include any <think> tags or explanation."""),
+                ("user", "Product: {product_name}\nSearch Results: {search_results}\n\nExtract the best product image URLs.")
+            ])
+            chain = prompt | self.llm | StrOutputParser()
+            response_text = chain.invoke({"product_name": product_name, "search_results": str(search_results)})
+            result = parse_json_output(response_text)
+            
+            # Return list of image URLs
+            if isinstance(result, dict) and 'image_urls' in result:
+                return result['image_urls'][:5]
+            return []
+        except Exception as e:
+            print(f"Error finding images for {product_name}: {e}")
+            return []
+
+class PriceComparisonAgent:
+    """Agent specialized in finding the best prices across multiple retailers"""
+    def __init__(self):
+        self.llm = gemini_llm
+        self.search_tool = tavily_tool
+
+    def compare_prices(self, product_name: str):
+        """Search multiple retailers to find the best price"""
+        try:
+            # Search across major retailers
+            retailers_query = f"{product_name} price buy amazon walmart best buy target ebay"
+            search_results = self.search_tool.invoke({"query": retailers_query})
+            
+            # Use LLM to extract price comparison data
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", """You are a Price Comparison Specialist. Extract pricing information from multiple retailers.
+Return ONLY a JSON object with:
+- 'price_comparison': array of objects with 'retailer', 'price', 'url', 'availability'
+- 'cheapest_link': URL to the cheapest option found
+
+Prioritize reputable retailers like Amazon, Walmart, Best Buy, Target, etc.
+Extract actual numeric prices when possible (e.g., 299.99, $450, etc.).
+Do not include any <think> tags or explanation."""),
+                ("user", "Product: {product_name}\nSearch Results: {search_results}\n\nFind the best prices from different retailers.")
+            ])
+            chain = prompt | self.llm | StrOutputParser()
+            response_text = chain.invoke({"product_name": product_name, "search_results": str(search_results)})
+            result = parse_json_output(response_text)
+            
+            return {
+                'price_comparison': result.get('price_comparison', []),
+                'cheapest_link': result.get('cheapest_link', '')
+            }
+        except Exception as e:
+            print(f"Error comparing prices for {product_name}: {e}")
+            return {'price_comparison': [], 'cheapest_link': ''}
+
