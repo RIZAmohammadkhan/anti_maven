@@ -8,12 +8,12 @@
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
     
     <!-- Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- Marked.js for Markdown Rendering -->
+    <!-- Marked.js -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
     <!-- Tailwind CSS -->
@@ -23,32 +23,20 @@
             theme: {
                 extend: {
                     colors: {
-                        beige: {
-                            50: '#FDFBF7',
-                            100: '#F7F5F0',
-                            200: '#EBE9E4',
-                            300: '#DMDAD5',
-                        },
-                        brand: {
-                            orange: '#FF5A1F', // Vibrant Orange
-                            black: '#121212', // Deep Black
-                            gray: '#2A2A2A',
-                            soft: '#FFF5F1'
-                        }
+                        beige: { 50: '#FDFBF7', 100: '#F7F5F0', 200: '#EBE9E4', 300: '#DMDAD5' },
+                        brand: { orange: '#FF5A1F', black: '#121212', gray: '#2A2A2A', soft: '#FFF5F1' }
                     },
                     fontFamily: {
                         sans: ['Inter', 'sans-serif'],
                         display: ['Space Grotesk', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
                     },
                     animation: {
-                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
                         'float': 'float 6s ease-in-out infinite',
+                        'pulse-fast': 'pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite',
                     },
                     keyframes: {
-                        float: {
-                            '0%, 100%': { transform: 'translateY(0)' },
-                            '50%': { transform: 'translateY(-10px)' },
-                        }
+                        float: { '0%, 100%': { transform: 'translateY(0)' }, '50%': { transform: 'translateY(-10px)' } }
                     }
                 }
             }
@@ -56,556 +44,447 @@
     </script>
 
     <style>
-        body {
-            background-color: #FDFBF7;
-            color: #121212;
-        }
+        body { background-color: #FDFBF7; color: #121212; overflow-x: hidden; }
         
-        /* Glass Modal Styles */
-        .modal-backdrop {
-            background: rgba(18, 18, 18, 0.2);
-            backdrop-filter: blur(8px);
-        }
+        /* Hide Scrollbar for Carousel */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-        ::-webkit-scrollbar-track {
-            background: transparent; 
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #e5e5e5; 
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #d4d4d4; 
-        }
+        /* Slide Over Drawer Animation */
+        .drawer-enter { transform: translateX(100%); }
+        .drawer-enter-active { transform: translateX(0); transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+        .drawer-exit { transform: translateX(0); }
+        .drawer-exit-active { transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 
-        .loader-dot {
-            animation: loader-bounce 0.6s infinite alternate;
-        }
-        .loader-dot:nth-child(2) { animation-delay: 0.2s; }
-        .loader-dot:nth-child(3) { animation-delay: 0.4s; }
+        /* Smooth Carousel Scroll */
+        .carousel-container { scroll-behavior: smooth; }
 
-        @keyframes loader-bounce {
-            to { transform: translateY(-10px); }
-        }
+        /* Typography fixes */
+        #final-recommendation strong { color: #FF5A1F; font-weight: 700; }
+        #final-recommendation ul { margin-left: 1.2rem; list-style-type: disc; margin-bottom: 1rem; }
+        #final-recommendation p { margin-bottom: 0.8rem; }
 
-        .fade-in-up {
-            animation: fadeInUp 0.6s ease-out forwards;
-            opacity: 0;
-            transform: translateY(20px);
-        }
-
-        @keyframes fadeInUp {
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        /* Flow line animation */
-        .flow-line {
-            stroke-dasharray: 10;
-            animation: dash 1s linear infinite;
-        }
-        @keyframes dash {
-            to {
-                stroke-dashoffset: -20;
-            }
-        }
-
-        /* Markdown Rendering Styles */
-        #final-recommendation {
-            line-height: 1.8;
-        }
-        
-        #final-recommendation p {
-            margin-bottom: 0.75rem;
-        }
-        
-        #final-recommendation strong {
-            color: #FF5A1F;
-            font-weight: 600;
-        }
-        
-        #final-recommendation em {
-            color: #2A2A2A;
-            font-style: italic;
-        }
-        
-        #final-recommendation ul, #final-recommendation ol {
-            margin-left: 1.5rem;
-            margin-top: 0.5rem;
-            margin-bottom: 0.75rem;
-        }
-        
-        #final-recommendation li {
-            margin-bottom: 0.25rem;
-        }
-        
-        #final-recommendation code {
-            background: #F7F5F0;
-            padding: 0.125rem 0.375rem;
-            border-radius: 0.25rem;
-            font-size: 0.9em;
-            color: #121212;
-        }
+        /* Terminal Scrollbar */
+        .terminal-scroll::-webkit-scrollbar { width: 6px; }
+        .terminal-scroll::-webkit-scrollbar-track { background: #1e1e1e; }
+        .terminal-scroll::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
     </style>
 </head>
-<body class="min-h-screen flex flex-col font-sans selection:bg-brand-orange selection:text-white relative overflow-x-hidden">
+<body class="min-h-screen flex flex-col font-sans relative">
 
     <!-- Navbar -->
-    <nav class="w-full py-6 px-6 md:px-12 flex justify-between items-center bg-transparent z-40 relative">
+    <nav class="w-full py-6 px-6 md:px-12 flex justify-between items-center z-40">
         <div class="flex items-center gap-3 cursor-pointer" onclick="window.location.reload()">
             <div class="w-10 h-10 bg-brand-black rounded-xl flex items-center justify-center text-white shadow-lg shadow-brand-orange/20">
                 <i class="fa-solid fa-layer-group text-lg"></i>
             </div>
             <span class="font-display font-bold text-2xl tracking-tight">MAVEN</span>
         </div>
-        <button onclick="toggleModal()" class="group flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-brand-orange transition-colors bg-white/50 px-4 py-2 rounded-full border border-transparent hover:border-gray-200">
-            <i class="fa-regular fa-circle-question"></i>
-            <span>How it works</span>
-        </button>
     </nav>
 
     <!-- Main Content -->
-    <main class="flex-grow container mx-auto px-4 md:px-8 max-w-6xl pb-20 z-10 relative">
+    <main class="flex-grow container mx-auto px-4 md:px-8 max-w-7xl pb-20 relative">
         
-        <!-- Hero / Search Section -->
-        <section id="search-section" class="flex flex-col items-center justify-center min-h-[65vh] transition-all duration-700">
-            
+        <!-- SEARCH SECTION -->
+        <section id="search-section" class="flex flex-col items-center justify-center min-h-[60vh] transition-all duration-700">
             <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-soft text-brand-orange text-xs font-bold tracking-wider mb-6 animate-float">
-                <span class="w-2 h-2 rounded-full bg-brand-orange"></span>
-                AI POWERED SHOPPING
+                <span class="w-2 h-2 rounded-full bg-brand-orange"></span> AI SHOPPING AGENT
             </div>
 
+            <!-- HEADING WITH ORANGE HIGHLIGHT ON 'NOISE' -->
             <h1 class="font-display text-4xl md:text-7xl font-bold text-center mb-6 leading-tight text-brand-black">
-                Ask Maven to find <br>
+                Find the best.<br>
+                Without the 
                 <span class="text-brand-orange relative inline-block">
-                    the best.
-                    <svg class="absolute w-full h-3 -bottom-1 left-0 text-brand-orange opacity-30" viewBox="0 0 200 9" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2.00025 6.99997C25.7501 2.49994 132.5 -1.50005 198 2.49997" stroke="currentColor" stroke-width="3"/></svg>
+                    noise.
+                    <svg class="absolute w-full h-3 -bottom-1 left-0 text-brand-orange opacity-40" viewBox="0 0 200 9" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2.00025 6.99997C25.7501 2.49994 132.5 -1.50005 198 2.49997" stroke="currentColor" stroke-width="3"/>
+                    </svg>
                 </span>
             </h1>
-            <p class="text-gray-500 text-lg md:text-xl mb-12 max-w-2xl text-center leading-relaxed">
-                Maven uses a team of autonomous AI agents to research, review, and compare products so you don't have to.
-            </p>
-
-            <form id="search-form" class="w-full max-w-2xl relative group transform transition-all hover:-translate-y-1">
+            
+            <form id="search-form" class="w-full max-w-2xl relative group mb-8">
                 <div class="absolute inset-y-0 left-6 flex items-center pointer-events-none">
                     <i class="fa-solid fa-magnifying-glass text-xl text-gray-400 group-focus-within:text-brand-orange transition-colors"></i>
                 </div>
-                <input 
-                    type="text" 
-                    id="query-input"
-                    class="w-full py-6 pl-14 pr-36 bg-white border border-gray-200 rounded-2xl shadow-xl shadow-gray-200/40 text-lg focus:outline-none focus:ring-4 focus:ring-brand-orange/10 focus:border-brand-orange transition-all placeholder:text-gray-300"
-                    placeholder="e.g., Best espresso machine under $500..."
-                    required
-                >
-                <button 
-                    type="submit" 
-                    class="absolute right-3 top-3 bottom-3 bg-brand-black hover:bg-brand-orange text-white font-medium px-8 rounded-xl transition-all duration-300 flex items-center gap-2 shadow-lg hover:shadow-brand-orange/30"
-                >
+                <input type="text" id="query-input" class="w-full py-5 pl-14 pr-36 bg-white border border-gray-200 rounded-2xl shadow-xl shadow-gray-200/40 text-lg focus:outline-none focus:ring-4 focus:ring-brand-orange/10 focus:border-brand-orange transition-all" placeholder="e.g., Best espresso machine under $500..." required>
+                <button type="submit" class="absolute right-3 top-2.5 bottom-2.5 bg-brand-black hover:bg-brand-orange text-white font-medium px-6 rounded-xl transition-all duration-300 flex items-center gap-2">
                     <span>Search</span>
-                    <i class="fa-solid fa-arrow-right text-xs"></i>
                 </button>
             </form>
-
-            <!-- Popular tags -->
-            <div class="mt-8 flex flex-wrap justify-center gap-3 text-sm text-gray-500">
-                <span>Trending:</span>
-                <button onclick="setQuery('Best noise cancelling headphones')" class="hover:text-brand-orange hover:underline decoration-brand-orange/50 underline-offset-4 transition-all">Headphones</button>
-                <button onclick="setQuery('Top rated gaming laptops 2024')" class="hover:text-brand-orange hover:underline decoration-brand-orange/50 underline-offset-4 transition-all">Gaming Laptops</button>
-                <button onclick="setQuery('Budget friendly mechanical keyboards')" class="hover:text-brand-orange hover:underline decoration-brand-orange/50 underline-offset-4 transition-all">Keyboards</button>
-            </div>
         </section>
 
-        <!-- Loading State -->
-        <section id="loader-section" class="hidden flex-col items-center justify-center py-20 min-h-[50vh]">
-            <div class="relative w-24 h-24 mb-8">
-                <div class="absolute inset-0 border-4 border-brand-orange/20 rounded-full"></div>
-                <div class="absolute inset-0 border-4 border-brand-orange rounded-full border-t-transparent animate-spin"></div>
-                <div class="absolute inset-0 flex items-center justify-center">
-                    <i class="fa-solid fa-brain text-brand-orange text-2xl animate-pulse"></i>
+        <!-- LOADER SECTION (Real-time) -->
+        <section id="loader-section" class="hidden flex-col items-center justify-center py-10 min-h-[60vh]">
+            
+            <!-- Timer & Pulse -->
+            <div class="flex items-center gap-3 mb-8">
+                <div class="w-3 h-3 bg-brand-orange rounded-full animate-pulse-fast"></div>
+                <span id="timer" class="font-mono text-xl font-bold text-brand-black">00:00.0</span>
+            </div>
+
+            <div class="relative w-full max-w-2xl">
+                <!-- Main Status -->
+                <div class="text-center mb-8">
+                    <h3 class="font-display text-2xl font-bold mb-2">Maven is working</h3>
+                    <p id="main-status" class="text-gray-500">Initializing agent graph...</p>
+                </div>
+
+                <!-- Live Terminal -->
+                <div class="bg-[#1e1e1e] rounded-xl shadow-2xl overflow-hidden border border-gray-800 w-full">
+                    <div class="bg-[#2d2d2d] px-4 py-2 flex items-center gap-2 border-b border-gray-700">
+                        <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                        <span class="ml-2 text-xs text-gray-400 font-mono">agent_stream.log</span>
+                    </div>
+                    <div id="terminal-logs" class="p-4 h-64 overflow-y-auto font-mono text-sm terminal-scroll space-y-2">
+                        <!-- Logs injected here -->
+                    </div>
                 </div>
             </div>
-            
-            <h3 class="font-display text-3xl font-bold mb-2 text-brand-black">Maven is thinking</h3>
-            <div class="bg-white px-6 py-2 rounded-full shadow-sm border border-gray-100 flex items-center gap-3">
-                <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                <p id="loading-text" class="text-gray-500 font-mono text-sm">Initializing agent graph...</p>
-            </div>
         </section>
 
-        <!-- Results Section -->
+        <!-- RESULTS SECTION -->
         <section id="results-section" class="hidden opacity-0 transition-opacity duration-500">
             
-            <!-- Summary Card -->
-            <div class="bg-white rounded-3xl p-8 md:p-10 shadow-xl shadow-gray-200/50 mb-16 border border-gray-100 fade-in-up relative overflow-hidden" style="animation-delay: 0.1s">
-                <div class="absolute top-0 left-0 w-2 h-full bg-brand-orange"></div>
-                <div class="absolute -top-10 -right-10 w-40 h-40 bg-brand-orange/5 rounded-full blur-3xl"></div>
-                
-                <div class="flex flex-col md:flex-row items-start gap-6 relative z-10">
-                    <div class="bg-brand-black p-4 rounded-2xl text-white shrink-0 shadow-lg shadow-brand-orange/20">
-                        <i class="fa-solid fa-wand-magic-sparkles text-2xl"></i>
-                    </div>
-                    <div class="w-full">
-                        <h2 class="font-display text-2xl font-bold mb-4 text-brand-black">Maven's Recommendation</h2>
-                        <div id="final-recommendation" class="prose prose-lg prose-slate max-w-none text-gray-600 leading-relaxed">
-                            <!-- Recommendation text will go here -->
-                        </div>
-                    </div>
+            <!-- Summary -->
+            <div class="bg-white rounded-3xl p-8 mb-12 shadow-sm border border-gray-100 flex flex-col md:flex-row gap-6 items-start">
+                <div class="bg-brand-soft p-4 rounded-2xl text-brand-orange shrink-0">
+                    <i class="fa-solid fa-wand-magic-sparkles text-2xl"></i>
                 </div>
+                <div class="prose prose-sm max-w-none text-gray-600" id="final-recommendation"></div>
             </div>
 
-            <!-- Products Grid Header -->
-            <div class="mb-8 flex flex-col md:flex-row justify-between items-end border-b border-gray-200 pb-4 gap-4">
+            <!-- CAROUSEL CONTROLS -->
+            <div class="flex justify-between items-end mb-6 px-2">
                 <div>
-                    <h2 class="font-display text-3xl font-bold text-brand-black">Top Findings</h2>
-                    <p class="text-gray-400 mt-1">Based on deep web analysis and reviews</p>
+                    <h2 class="font-display text-3xl font-bold">Top Picks</h2>
+                    <p class="text-gray-400 text-sm mt-1">Found across major retailers</p>
                 </div>
                 <div class="flex gap-2">
-                    <span class="px-3 py-1 bg-white border border-gray-200 rounded-full text-xs font-bold text-gray-500">RELEVANCE</span>
-                    <span class="px-3 py-1 bg-transparent border border-transparent rounded-full text-xs font-bold text-gray-300">PRICE</span>
+                    <button onclick="scrollCarousel(-1)" class="w-12 h-12 rounded-full bg-white border border-gray-200 hover:border-brand-orange hover:text-brand-orange flex items-center justify-center transition-all shadow-sm">
+                        <i class="fa-solid fa-arrow-left"></i>
+                    </button>
+                    <button onclick="scrollCarousel(1)" class="w-12 h-12 rounded-full bg-brand-black text-white hover:bg-brand-orange flex items-center justify-center transition-all shadow-lg shadow-brand-black/20">
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </button>
                 </div>
             </div>
 
-            <!-- Products Grid -->
-            <div id="products-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                <!-- Product cards injected here -->
+            <!-- CAROUSEL CONTAINER -->
+            <div id="products-carousel" class="carousel-container flex gap-6 overflow-x-auto no-scrollbar snap-x snap-mandatory py-4 px-2 pb-12">
+                <!-- Cards injected here -->
             </div>
             
-            <div class="mt-20 text-center pb-10">
-                <button onclick="resetSearch()" class="group text-gray-400 hover:text-brand-orange font-medium transition-colors flex flex-col items-center mx-auto gap-2">
-                    <div class="w-12 h-12 rounded-full bg-white border border-gray-200 flex items-center justify-center group-hover:border-brand-orange transition-colors shadow-sm">
-                        <i class="fa-solid fa-arrow-up"></i>
-                    </div>
-                    <span>Start New Search</span>
+            <div class="text-center mt-8">
+                <button onclick="resetSearch()" class="text-gray-400 hover:text-brand-orange text-sm font-medium transition-colors">
+                    <i class="fa-solid fa-rotate-right mr-2"></i> Start New Search
                 </button>
             </div>
         </section>
-
     </main>
 
-    <!-- How It Works Modal -->
-    <div id="how-it-works-modal" class="fixed inset-0 z-50 hidden opacity-0 transition-opacity duration-300">
-        <!-- Backdrop -->
-        <div class="absolute inset-0 modal-backdrop" onclick="toggleModal()"></div>
+    <!-- SLIDE-OVER DRAWER (DETAILS) -->
+    <div id="product-drawer-backdrop" class="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 hidden opacity-0 transition-opacity duration-300" onclick="closeDrawer()"></div>
+    
+    <div id="product-drawer" class="fixed inset-y-0 right-0 w-full md:w-[500px] bg-white shadow-2xl z-50 transform translate-x-full transition-transform duration-300 ease-in-out flex flex-col">
+        <!-- Drawer Content Filled by JS -->
+        <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-white sticky top-0 z-10">
+            <h3 class="font-display text-xl font-bold text-brand-black truncate pr-4" id="drawer-title">Product Name</h3>
+            <button onclick="closeDrawer()" class="w-8 h-8 rounded-full bg-gray-50 hover:bg-gray-100 flex items-center justify-center transition-colors">
+                <i class="fa-solid fa-times text-gray-400"></i>
+            </button>
+        </div>
         
-        <!-- Modal Content -->
-        <div class="absolute inset-0 flex items-center justify-center p-4">
-            <div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto transform scale-95 transition-transform duration-300" id="modal-panel">
-                
-                <!-- Header -->
-                <div class="p-8 border-b border-gray-100 flex justify-between items-center sticky top-0 bg-white z-10">
-                    <div>
-                        <h2 class="font-display text-2xl font-bold text-brand-black">Under the Hood</h2>
-                        <p class="text-gray-500 text-sm">How Maven's LangGraph architecture works</p>
-                    </div>
-                    <button onclick="toggleModal()" class="w-10 h-10 rounded-full bg-gray-50 hover:bg-gray-100 flex items-center justify-center transition-colors">
-                        <i class="fa-solid fa-times text-gray-500"></i>
-                    </button>
-                </div>
+        <div class="flex-grow overflow-y-auto p-6 space-y-8" id="drawer-content">
+            <!-- Dynamic Content -->
+        </div>
 
-                <!-- Body -->
-                <div class="p-8">
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 relative">
-                        <!-- Connecting Line (Desktop) -->
-                        <div class="hidden md:block absolute top-12 left-0 w-full h-1 bg-gray-100 -z-0"></div>
-
-                        <!-- Step 1: Manager -->
-                        <div class="relative group">
-                            <div class="w-24 h-24 bg-brand-black rounded-2xl flex items-center justify-center text-white text-3xl mx-auto mb-4 shadow-lg shadow-brand-black/20 relative z-10 group-hover:-translate-y-1 transition-transform">
-                                <i class="fa-solid fa-user-tie"></i>
-                                <div class="absolute -bottom-3 bg-brand-orange text-white text-[10px] font-bold px-2 py-0.5 rounded-full">PLAN</div>
-                            </div>
-                            <h3 class="text-center font-bold text-lg mb-2">Manager</h3>
-                            <p class="text-center text-sm text-gray-500">Analyzes your query and delegates tasks to the research team.</p>
-                        </div>
-
-                        <!-- Step 2: Researcher -->
-                        <div class="relative group">
-                            <div class="w-24 h-24 bg-white border-2 border-brand-orange rounded-2xl flex items-center justify-center text-brand-orange text-3xl mx-auto mb-4 shadow-lg shadow-brand-orange/10 relative z-10 group-hover:-translate-y-1 transition-transform">
-                                <i class="fa-solid fa-globe"></i>
-                                <div class="absolute -bottom-3 bg-brand-orange text-white text-[10px] font-bold px-2 py-0.5 rounded-full">SEARCH</div>
-                            </div>
-                            <h3 class="text-center font-bold text-lg mb-2">Researcher</h3>
-                            <p class="text-center text-sm text-gray-500">Scrapes the web (Tavily) to find top product candidates.</p>
-                        </div>
-
-                        <!-- Step 3: Specialist -->
-                        <div class="relative group">
-                            <div class="w-24 h-24 bg-white border border-gray-200 rounded-2xl flex items-center justify-center text-brand-black text-3xl mx-auto mb-4 shadow-sm relative z-10 group-hover:-translate-y-1 transition-transform">
-                                <i class="fa-solid fa-microscope"></i>
-                                <div class="absolute -bottom-3 bg-gray-800 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">ANALYZE</div>
-                            </div>
-                            <h3 class="text-center font-bold text-lg mb-2">Specialist</h3>
-                            <p class="text-center text-sm text-gray-500">Deep dives into specs, reads reviews, and weighs pros/cons.</p>
-                        </div>
-
-                        <!-- Step 4: Formatter -->
-                        <div class="relative group">
-                            <div class="w-24 h-24 bg-beige-200 rounded-2xl flex items-center justify-center text-brand-black text-3xl mx-auto mb-4 shadow-inner relative z-10 group-hover:-translate-y-1 transition-transform">
-                                <i class="fa-solid fa-pen-fancy"></i>
-                                <div class="absolute -bottom-3 bg-gray-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">REPORT</div>
-                            </div>
-                            <h3 class="text-center font-bold text-lg mb-2">Formatter</h3>
-                            <p class="text-center text-sm text-gray-500">Compiles all data into the beautiful UI you see here.</p>
-                        </div>
-                    </div>
-
-                    <div class="mt-12 bg-beige-50 p-6 rounded-2xl border border-beige-200">
-                        <h4 class="font-bold text-brand-black mb-2 flex items-center gap-2">
-                            <i class="fa-solid fa-code text-brand-orange"></i> Tech Stack
-                        </h4>
-                        <div class="flex flex-wrap gap-2">
-                            <span class="px-3 py-1 bg-white border border-gray-200 rounded-md text-xs font-mono text-gray-600">Python</span>
-                            <span class="px-3 py-1 bg-white border border-gray-200 rounded-md text-xs font-mono text-gray-600">FastAPI</span>
-                            <span class="px-3 py-1 bg-white border border-gray-200 rounded-md text-xs font-mono text-gray-600">LangGraph</span>
-                            <span class="px-3 py-1 bg-white border border-gray-200 rounded-md text-xs font-mono text-gray-600">TailwindCSS</span>
-                            <span class="px-3 py-1 bg-white border border-gray-200 rounded-md text-xs font-mono text-gray-600">Groq LLM</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        <div class="p-6 border-t border-gray-100 bg-gray-50" id="drawer-footer">
+            <!-- Dynamic Buttons -->
         </div>
     </div>
 
-    <!-- JavaScript Logic -->
+    <!-- JAVASCRIPT -->
     <script>
-        const searchForm = document.getElementById('search-form');
-        const searchSection = document.getElementById('search-section');
-        const loaderSection = document.getElementById('loader-section');
-        const resultsSection = document.getElementById('results-section');
-        const loadingText = document.getElementById('loading-text');
-        const modal = document.getElementById('how-it-works-modal');
-        const modalPanel = document.getElementById('modal-panel');
+        // --- State & DOM Elements ---
+        let currentProducts = []; 
+        let eventSource = null;
+        let timerInterval = null;
+        let startTime = 0;
+
+        const carousel = document.getElementById('products-carousel');
+        const drawer = document.getElementById('product-drawer');
+        const backdrop = document.getElementById('product-drawer-backdrop');
+        const terminalLogs = document.getElementById('terminal-logs');
+        const mainStatus = document.getElementById('main-status');
+        const timerElement = document.getElementById('timer');
         
-        // --- Modal Logic ---
-        function toggleModal() {
-            if (modal.classList.contains('hidden')) {
-                // Open
-                modal.classList.remove('hidden');
-                // Trigger reflow
-                void modal.offsetWidth;
-                modal.classList.remove('opacity-0');
-                modalPanel.classList.remove('scale-95');
-                modalPanel.classList.add('scale-100');
-            } else {
-                // Close
-                modal.classList.add('opacity-0');
-                modalPanel.classList.remove('scale-100');
-                modalPanel.classList.add('scale-95');
-                setTimeout(() => {
-                    modal.classList.add('hidden');
-                }, 300);
-            }
-        }
-
         // --- Search Logic ---
-        function setQuery(text) {
-            document.getElementById('query-input').value = text;
-        }
-
-        // Loading messages simulation (Matches Backend Agents)
-        const loadingMessages = [
-            "Manager Agent: Analyzing intent...",
-            "Primary Researcher: Searching Tavily API...",
-            "Product Specialist: Analyzing feature specs...",
-            "Image Search Agent: Finding product images...",
-            "Price Comparison Agent: Searching retailers...",
-            "Product Specialist: Reading pros & cons...",
-            "Formatter Agent: Compiling final JSON..."
-        ];
-
-        searchForm.addEventListener('submit', async (e) => {
+        document.getElementById('search-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const query = document.getElementById('query-input').value;
-
-            // UI Transitions
-            searchSection.classList.add('hidden'); 
-            loaderSection.classList.remove('hidden');
-            loaderSection.classList.add('flex');
             
-            // Cycle through loading messages
-            let msgIndex = 0;
-            const msgInterval = setInterval(() => {
-                loadingText.innerText = loadingMessages[msgIndex % loadingMessages.length];
-                msgIndex++;
-            }, 2000);
+            startSearchUI();
+            
+            // Connect to Server-Sent Events (SSE)
+            if (eventSource) eventSource.close();
+            
+            // Using the GET endpoint for streaming
+            eventSource = new EventSource(`/api/research/stream?query=${encodeURIComponent(query)}`);
 
-            try {
-                // NOTE: Ensuring the fetch path matches your python main.py endpoint
-                const response = await fetch('/api/research', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ query: query })
-                });
-
-                if (!response.ok) throw new Error('Network response was not ok');
+            eventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
                 
-                const data = await response.json();
-                
-                clearInterval(msgInterval);
-                displayResults(data);
+                if (data.type === 'progress') {
+                    addLog(data.message);
+                } else if (data.type === 'complete') {
+                    stopSearchUI();
+                    currentProducts = data.data.products;
+                    displayResults(data.data);
+                    eventSource.close();
+                } else if (data.type === 'error') {
+                    stopSearchUI();
+                    alert("Error: " + data.message);
+                    eventSource.close();
+                    resetSearch();
+                }
+            };
 
-            } catch (error) {
-                clearInterval(msgInterval);
-                loaderSection.classList.add('hidden');
-                loaderSection.classList.remove('flex');
-                searchSection.classList.remove('hidden');
-                alert("Maven Error: " + error.message);
-            }
+            eventSource.onerror = (err) => {
+                console.error("EventSource failed:", err);
+                eventSource.close();
+            };
         });
 
+        // --- UI Logic: Timer & Logs ---
+        function startSearchUI() {
+            document.getElementById('search-section').classList.add('hidden');
+            document.getElementById('loader-section').classList.remove('hidden');
+            document.getElementById('loader-section').classList.add('flex');
+            
+            terminalLogs.innerHTML = '';
+            addLog("System initialized. Starting agent workflow...");
+            
+            startTime = Date.now();
+            timerInterval = setInterval(() => {
+                const elapsed = Date.now() - startTime;
+                const seconds = Math.floor(elapsed / 1000);
+                const milliseconds = Math.floor((elapsed % 1000) / 100);
+                const minutes = Math.floor(seconds / 60);
+                timerElement.innerText = `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}.${milliseconds}`;
+            }, 100);
+        }
+
+        function stopSearchUI() {
+            clearInterval(timerInterval);
+        }
+
+        function addLog(message) {
+            mainStatus.innerText = message; // Update main header
+            
+            const div = document.createElement('div');
+            div.className = "text-green-400 font-mono text-sm opacity-0 transform translate-y-2 transition-all duration-300";
+            
+            // Highlight Agent names
+            let formattedMsg = message.replace(
+                /(Manager|Researcher|Specialist|Formatter|Agent)/g, 
+                '<span class="text-blue-400 font-bold">$1</span>'
+            );
+            
+            div.innerHTML = `<span class="text-gray-500 mr-2">[${new Date().toLocaleTimeString().split(' ')[0]}]</span> > ${formattedMsg}`;
+            terminalLogs.appendChild(div);
+            
+            // Trigger animation
+            requestAnimationFrame(() => {
+                div.classList.remove('opacity-0', 'translate-y-2');
+            });
+
+            // Auto Scroll
+            terminalLogs.scrollTop = terminalLogs.scrollHeight;
+        }
+
+        // --- Render Logic ---
         function displayResults(data) {
-            loaderSection.classList.add('hidden');
-            loaderSection.classList.remove('flex');
+            document.getElementById('loader-section').classList.add('hidden');
+            document.getElementById('loader-section').classList.remove('flex');
             
-            resultsSection.classList.remove('hidden');
-            // Trigger reflow for fade in
-            void resultsSection.offsetWidth;
-            resultsSection.classList.remove('opacity-0');
+            const resultSec = document.getElementById('results-section');
+            resultSec.classList.remove('hidden');
+            setTimeout(() => resultSec.classList.remove('opacity-0'), 100);
 
-            // Set Recommendation - Render Markdown
-            const recommendationText = data.final_recommendation || "No recommendation generated.";
-            const recommendationElement = document.getElementById('final-recommendation');
+            document.getElementById('final-recommendation').innerHTML = marked.parse(data.final_recommendation || "Here are your top results.");
+
+            carousel.innerHTML = '';
             
-            // Parse markdown and render as HTML
-            if (typeof marked !== 'undefined') {
-                recommendationElement.innerHTML = marked.parse(recommendationText);
-            } else {
-                recommendationElement.innerText = recommendationText;
-            }
-
-            // Render Products
-            const grid = document.getElementById('products-grid');
-            grid.innerHTML = ''; // Clear previous
-
             data.products.forEach((product, index) => {
-                // Formatting Rating
-                const ratingVal = product.rating ? parseFloat(product.rating).toFixed(1) : '4.0';
-                const ratingStars = product.rating ? Math.round(parseFloat(product.rating) * 2) / 2 : 4.0; // Round to nearest 0.5
-                
-                // Generate star display
-                let starsHtml = '';
-                for (let i = 1; i <= 5; i++) {
-                    if (i <= Math.floor(ratingStars)) {
-                        starsHtml += '<i class="fa-solid fa-star text-brand-orange text-xs"></i>';
-                    } else if (i === Math.ceil(ratingStars) && ratingStars % 1 !== 0) {
-                        starsHtml += '<i class="fa-solid fa-star-half-stroke text-brand-orange text-xs"></i>';
-                    } else {
-                        starsHtml += '<i class="fa-regular fa-star text-brand-orange text-xs"></i>';
-                    }
-                }
-                
-                const ratingHtml = `<div class="flex items-center gap-1.5">
-                    <span class="font-bold text-white">${ratingVal}</span>
-                    <div class="flex gap-0.5">${starsHtml}</div>
-                </div>`;
-                
-                // Formatting Price
-                let priceDisplay = product.price;
-                if(priceDisplay !== "Price not available" && !String(priceDisplay).includes('$') && !String(priceDisplay).includes('£') && !isNaN(parseFloat(priceDisplay))) {
-                   priceDisplay = `$${priceDisplay}`; 
-                }
+                const rating = product.rating || 4.0;
+                const bestPrice = formatPrice(product.price);
+                const cheapestLink = product.cheapest_link || product.url;
 
-                // Pros List (Max 3)
-                const prosHtml = product.pros.slice(0,3).map(pro => 
-                    `<li class="flex items-start gap-2 text-sm text-gray-600 mb-2">
-                        <i class="fa-solid fa-check text-brand-orange mt-1 text-xs"></i> 
-                        <span class="leading-tight">${pro}</span>
-                    </li>`
-                ).join('');
-
-                const delay = (index + 2) * 0.1; // Stagger animation
-
-                // Use single product image
-                const imageUrl = product.image_url || '';
-                
-                const imgContent = imageUrl
-                    ? `<img src="${imageUrl}" alt="${product.name}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" onerror="this.parentElement.innerHTML='<div class=\\'w-full h-full flex items-center justify-center text-beige-300 bg-beige-100\\'><i class=\\'fa-solid fa-image text-4xl opacity-50\\'></i></div>'">`
-                    : `<div class="w-full h-full flex items-center justify-center text-beige-300 bg-beige-100"><i class="fa-solid fa-image text-4xl opacity-50"></i></div>`;
-                
-                // Price comparison display
-                const priceComparisonHtml = product.price_comparison && product.price_comparison.length > 0
-                    ? `<div class="mb-4 bg-white border border-gray-200 rounded-xl p-3">
-                        <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Best Prices Found</div>
-                        ${product.price_comparison.slice(0, 3).map(retailer => `
-                            <div class="flex items-center justify-between text-xs mb-2 pb-2 border-b border-gray-100 last:border-0">
-                                <span class="font-medium text-gray-700">${retailer.retailer}</span>
-                                <a href="${retailer.url}" target="_blank" class="text-brand-orange hover:underline font-bold">
-                                    ${typeof retailer.price === 'number' ? '$' + retailer.price.toFixed(2) : retailer.price}
-                                </a>
-                            </div>
-                        `).join('')}
-                        ${product.cheapest_link ? `
-                            <a href="${product.cheapest_link}" target="_blank" class="mt-2 flex items-center justify-center w-full bg-green-50 text-green-700 font-medium py-2 px-3 rounded-lg hover:bg-green-100 transition-all text-xs gap-1.5">
-                                <i class="fa-solid fa-tag"></i>
-                                <span>Best Deal</span>
-                                <i class="fa-solid fa-external-link-alt text-[10px] opacity-70"></i>
-                            </a>
-                        ` : ''}
-                       </div>`
-                    : '';
-
-                const cardHTML = `
-                <div class="bg-white rounded-3xl overflow-hidden border border-gray-100 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full fade-in-up group" style="animation-delay: ${delay}s">
-                    <div class="h-56 bg-gray-100 relative overflow-hidden">
-                        ${imgContent}
-                        <div class="absolute top-4 right-4 bg-white/95 backdrop-blur px-4 py-1.5 rounded-full text-sm font-bold shadow-sm text-brand-black">
-                            ${priceDisplay}
+                const card = `
+                <div class="min-w-[300px] md:min-w-[340px] snap-center bg-white rounded-3xl border border-gray-100 shadow-lg shadow-gray-200/50 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col overflow-hidden group h-full">
+                    
+                    <div class="h-48 bg-gray-50 relative overflow-hidden">
+                        <img src="${product.image_url || ''}" 
+                             class="w-full h-full object-contain p-6 mix-blend-multiply group-hover:scale-105 transition-transform duration-500"
+                             onerror="this.src='https://placehold.co/400x300?text=No+Image'">
+                        
+                        <div class="absolute top-4 right-4 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-bold shadow-sm border border-gray-100">
+                            ${bestPrice}
                         </div>
                     </div>
-                    
-                    <div class="p-6 flex flex-col flex-grow relative">
-                        <!-- Rating Badge overlapping image -->
-                        <div class="absolute -top-6 left-6 bg-brand-black text-white px-3 py-1.5 rounded-xl shadow-lg">
-                            ${ratingHtml}
+
+                    <div class="p-6 flex flex-col flex-grow">
+                        <div class="flex items-center gap-2 mb-3">
+                            <div class="flex text-brand-orange text-xs">
+                                ${generateStars(rating)}
+                            </div>
+                            <span class="text-xs text-gray-400 font-medium">${product.reviews_count ? product.reviews_count + ' reviews' : 'Top Rated'}</span>
                         </div>
 
-                        <div class="mt-4 mb-3">
-                            <h3 class="font-display font-bold text-xl leading-snug line-clamp-2 mb-1 group-hover:text-brand-orange transition-colors" title="${product.name}">${product.name}</h3>
-                            <div class="text-xs text-gray-400 font-mono">${product.reviews_count || 'Unknown'} verified reviews</div>
-                        </div>
+                        <h3 class="font-display font-bold text-lg leading-tight mb-2 line-clamp-2 h-12" title="${product.name}">
+                            ${product.name}
+                        </h3>
 
-                        ${priceComparisonHtml}
-
-                        <div class="mb-6 flex-grow bg-beige-50/50 p-4 rounded-xl">
-                            <h4 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">KEY FINDINGS</h4>
-                            <ul>
-                                ${prosHtml}
-                            </ul>
-                        </div>
-
-                        <div class="pt-2 mt-auto">
-                             ${product.why_to_buy ? 
-                                `<div class="text-xs text-gray-500 italic mb-4 pl-3 border-l-2 border-brand-orange/30">
-                                    "${product.why_to_buy.substring(0, 100)}${product.why_to_buy.length > 100 ? '...' : ''}"
-                                </div>` 
-                                : ''
-                            }
-                            <a href="${product.url}" target="_blank" class="flex items-center justify-center w-full bg-brand-black text-white font-medium py-3.5 rounded-xl hover:bg-brand-orange transition-all duration-300 shadow-lg shadow-gray-200 hover:shadow-brand-orange/30 gap-2">
-                                <span>View Product</span>
-                                <i class="fa-solid fa-external-link-alt text-xs opacity-70"></i>
+                        <div class="mt-auto pt-6 grid grid-cols-2 gap-3">
+                            <button onclick="openDrawer(${index})" class="py-2.5 px-4 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:border-brand-black hover:text-brand-black transition-colors">
+                                Details
+                            </button>
+                            <a href="${cheapestLink}" target="_blank" class="py-2.5 px-4 rounded-xl bg-brand-black text-white text-sm font-medium flex items-center justify-center gap-2 hover:bg-brand-orange transition-colors shadow-lg shadow-brand-black/20">
+                                Buy Now
                             </a>
                         </div>
                     </div>
                 </div>
                 `;
-                grid.innerHTML += cardHTML;
+                carousel.innerHTML += card;
             });
         }
 
+        // --- Drawer / Detail Logic ---
+        function openDrawer(index) {
+            const product = currentProducts[index];
+            if(!product) return;
+
+            document.getElementById('drawer-title').innerText = product.name;
+            const bestPrice = formatPrice(product.price);
+            const content = document.getElementById('drawer-content');
+            
+            let priceTable = '';
+            if(product.price_comparison && product.price_comparison.length > 0) {
+                priceTable = `
+                <div class="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Price Comparison</h4>
+                    <div class="space-y-3">
+                        ${product.price_comparison.map(p => `
+                            <div class="flex justify-between items-center text-sm">
+                                <span class="font-medium text-gray-700">${p.retailer}</span>
+                                <div class="flex items-center gap-3">
+                                    <span class="font-bold">${formatPrice(p.price)}</span>
+                                    <a href="${p.url}" target="_blank" class="text-brand-orange hover:text-brand-black"><i class="fa-solid fa-external-link-alt"></i></a>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>`;
+            }
+
+            content.innerHTML = `
+                <div class="w-full h-48 bg-white rounded-xl border border-gray-100 flex items-center justify-center p-4 mb-6">
+                     <img src="${product.image_url}" class="h-full object-contain">
+                </div>
+                <div class="flex items-center justify-between mb-6">
+                    <div>
+                        <span class="block text-sm text-gray-500">Best Price</span>
+                        <span class="text-2xl font-bold text-brand-black">${bestPrice}</span>
+                    </div>
+                    <div class="text-right">
+                        <div class="flex text-brand-orange text-sm mb-1 justify-end">${generateStars(product.rating)}</div>
+                        <span class="text-xs text-gray-400">${product.reviews_count || 'Verified'} Reviews</span>
+                    </div>
+                </div>
+                ${product.why_to_buy ? `
+                <div class="bg-brand-soft/50 p-4 rounded-xl border border-brand-orange/10 mb-6">
+                    <div class="flex gap-3">
+                        <i class="fa-solid fa-quote-left text-brand-orange/40 text-xl"></i>
+                        <p class="text-sm text-gray-700 italic leading-relaxed">${product.why_to_buy}</p>
+                    </div>
+                </div>` : ''}
+                ${priceTable}
+                <div class="grid grid-cols-1 gap-4 mt-6">
+                    <div>
+                        <h4 class="font-bold flex items-center gap-2 mb-3 text-sm"><i class="fa-solid fa-check-circle text-green-500"></i> The Good</h4>
+                        <ul class="space-y-2">
+                            ${product.pros.map(pro => `<li class="text-sm text-gray-600 pl-2 border-l-2 border-green-100">${pro}</li>`).join('')}
+                        </ul>
+                    </div>
+                    ${product.cons.length > 0 ? `
+                    <div>
+                        <h4 class="font-bold flex items-center gap-2 mb-3 text-sm"><i class="fa-solid fa-circle-exclamation text-red-400"></i> The Bad</h4>
+                        <ul class="space-y-2">
+                            ${product.cons.map(con => `<li class="text-sm text-gray-600 pl-2 border-l-2 border-red-100">${con}</li>`).join('')}
+                        </ul>
+                    </div>` : ''}
+                </div>
+                <!-- Specs -->
+                <div class="mt-6">
+                    <h4 class="font-bold text-sm mb-3">Key Features</h4>
+                    <div class="flex flex-wrap gap-2">
+                        ${Array.isArray(product.features) ? product.features.map(f => `
+                            <span class="px-3 py-1 bg-gray-100 rounded-lg text-xs text-gray-600 border border-gray-200">${f.split(':')[0]}</span>
+                        `).join('') : ''}
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('drawer-footer').innerHTML = `
+                <a href="${product.cheapest_link || product.url}" target="_blank" class="w-full py-4 bg-brand-black text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-brand-orange transition-all shadow-xl shadow-brand-orange/20">
+                    <span>Buy Now for ${bestPrice}</span>
+                    <i class="fa-solid fa-arrow-right"></i>
+                </a>
+            `;
+
+            backdrop.classList.remove('hidden');
+            setTimeout(() => backdrop.classList.remove('opacity-0'), 10);
+            drawer.classList.remove('translate-x-full');
+        }
+
+        function closeDrawer() {
+            drawer.classList.add('translate-x-full');
+            backdrop.classList.add('opacity-0');
+            setTimeout(() => backdrop.classList.add('hidden'), 300);
+        }
+
+        function scrollCarousel(direction) {
+            const scrollAmount = 340;
+            carousel.scrollBy({ left: direction * scrollAmount, behavior: 'smooth' });
+        }
+
         function resetSearch() {
-            resultsSection.classList.add('hidden');
-            resultsSection.classList.add('opacity-0');
-            searchForm.reset();
-            searchSection.classList.remove('hidden');
-            document.getElementById('query-input').focus();
+            if(eventSource) eventSource.close();
+            stopSearchUI();
+            document.getElementById('results-section').classList.add('hidden');
+            document.getElementById('results-section').classList.add('opacity-0');
+            document.getElementById('search-form').reset();
+            document.getElementById('search-section').classList.remove('hidden');
+        }
+
+        function formatPrice(price) {
+            if(!price) return "Check Price";
+            if(typeof price === 'string' && price.includes('$')) return price;
+            return `$${parseFloat(price).toFixed(2)}`;
+        }
+
+        function generateStars(rating) {
+            let html = '';
+            for (let i = 1; i <= 5; i++) {
+                if (i <= Math.floor(rating)) html += '<i class="fa-solid fa-star"></i>';
+                else if (i === Math.ceil(rating) && !Number.isInteger(rating)) html += '<i class="fa-solid fa-star-half-stroke"></i>';
+                else html += '<i class="fa-regular fa-star text-gray-300"></i>';
+            }
+            return html;
         }
     </script>
 </body>
