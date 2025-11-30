@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MAVEN | AI Shopping Assistant</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Marked.js for Markdown Rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        beige: {
+                            50: '#FDFBF7',
+                            100: '#F7F5F0',
+                            200: '#EBE9E4',
+                            300: '#DMDAD5',
+                        },
+                        brand: {
+                            orange: '#FF5A1F', // Vibrant Orange
+                            black: '#121212', // Deep Black
+                            gray: '#2A2A2A',
+                            soft: '#FFF5F1'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        display: ['Space Grotesk', 'sans-serif'],
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'float': 'float 6s ease-in-out infinite',
+                    },
+                    keyframes: {
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0)' },
+                            '50%': { transform: 'translateY(-10px)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #FDFBF7;
+            color: #121212;
+        }
+        
+        /* Glass Modal Styles */
+        .modal-backdrop {
+            background: rgba(18, 18, 18, 0.2);
+            backdrop-filter: blur(8px);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #e5e5e5; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #d4d4d4; 
+        }
+
+        .loader-dot {
+            animation: loader-bounce 0.6s infinite alternate;
+        }
+        .loader-dot:nth-child(2) { animation-delay: 0.2s; }
+        .loader-dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes loader-bounce {
+            to { transform: translateY(-10px); }
+        }
+
+        .fade-in-up {
+            animation: fadeInUp 0.6s ease-out forwards;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+
+        @keyframes fadeInUp {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Flow line animation */
+        .flow-line {
+            stroke-dasharray: 10;
+            animation: dash 1s linear infinite;
+        }
+        @keyframes dash {
+            to {
+                stroke-dashoffset: -20;
+            }
+        }
+
+        /* Markdown Rendering Styles */
+        #final-recommendation {
+            line-height: 1.8;
+        }
+        
+        #final-recommendation p {
+            margin-bottom: 0.75rem;
+        }
+        
+        #final-recommendation strong {
+            color: #FF5A1F;
+            font-weight: 600;
+        }
+        
+        #final-recommendation em {
+            color: #2A2A2A;
+            font-style: italic;
+        }
+        
+        #final-recommendation ul, #final-recommendation ol {
+            margin-left: 1.5rem;
+            margin-top: 0.5rem;
+            margin-bottom: 0.75rem;
+        }
+        
+        #final-recommendation li {
+            margin-bottom: 0.25rem;
+        }
+        
+        #final-recommendation code {
+            background: #F7F5F0;
+            padding: 0.125rem 0.375rem;
+            border-radius: 0.25rem;
+            font-size: 0.9em;
+            color: #121212;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col font-sans selection:bg-brand-orange selection:text-white relative overflow-x-hidden">
+
+    <!-- Navbar -->
+    <nav class="w-full py-6 px-6 md:px-12 flex justify-between items-center bg-transparent z-40 relative">
+        <div class="flex items-center gap-3 cursor-pointer" onclick="window.location.reload()">
+            <div class="w-10 h-10 bg-brand-black rounded-xl flex items-center justify-center text-white shadow-lg shadow-brand-orange/20">
+                <i class="fa-solid fa-layer-group text-lg"></i>
+            </div>
+            <span class="font-display font-bold text-2xl tracking-tight">MAVEN</span>
+        </div>
+        <button onclick="toggleModal()" class="group flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-brand-orange transition-colors bg-white/50 px-4 py-2 rounded-full border border-transparent hover:border-gray-200">
+            <i class="fa-regular fa-circle-question"></i>
+            <span>How it works</span>
+        </button>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="flex-grow container mx-auto px-4 md:px-8 max-w-6xl pb-20 z-10 relative">
+        
+        <!-- Hero / Search Section -->
+        <section id="search-section" class="flex flex-col items-center justify-center min-h-[65vh] transition-all duration-700">
+            
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-soft text-brand-orange text-xs font-bold tracking-wider mb-6 animate-float">
+                <span class="w-2 h-2 rounded-full bg-brand-orange"></span>
+                AI POWERED SHOPPING
+            </div>
+
+            <h1 class="font-display text-4xl md:text-7xl font-bold text-center mb-6 leading-tight text-brand-black">
+                Ask Maven to find <br>
+                <span class="text-brand-orange relative inline-block">
+                    the best.
+                    <svg class="absolute w-full h-3 -bottom-1 left-0 text-brand-orange opacity-30" viewBox="0 0 200 9" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2.00025 6.99997C25.7501 2.49994 132.5 -1.50005 198 2.49997" stroke="currentColor" stroke-width="3"/></svg>
+                </span>
+            </h1>
+            <p class="text-gray-500 text-lg md:text-xl mb-12 max-w-2xl text-center leading-relaxed">
+                Maven uses a team of autonomous AI agents to research, review, and compare products so you don't have to.
+            </p>
+
+            <form id="search-form" class="w-full max-w-2xl relative group transform transition-all hover:-translate-y-1">
+                <div class="absolute inset-y-0 left-6 flex items-center pointer-events-none">
+                    <i class="fa-solid fa-magnifying-glass text-xl text-gray-400 group-focus-within:text-brand-orange transition-colors"></i>
+                </div>
+                <input 
+                    type="text" 
+                    id="query-input"
+                    class="w-full py-6 pl-14 pr-36 bg-white border border-gray-200 rounded-2xl shadow-xl shadow-gray-200/40 text-lg focus:outline-none focus:ring-4 focus:ring-brand-orange/10 focus:border-brand-orange transition-all placeholder:text-gray-300"
+                    placeholder="e.g., Best espresso machine under $500..."
+                    required
+                >
+                <button 
+                    type="submit" 
+                    class="absolute right-3 top-3 bottom-3 bg-brand-black hover:bg-brand-orange text-white font-medium px-8 rounded-xl transition-all duration-300 flex items-center gap-2 shadow-lg hover:shadow-brand-orange/30"
+                >
+                    <span>Search</span>
+                    <i class="fa-solid fa-arrow-right text-xs"></i>
+                </button>
+            </form>
+
+            <!-- Popular tags -->
+            <div class="mt-8 flex flex-wrap justify-center gap-3 text-sm text-gray-500">
+                <span>Trending:</span>
+                <button onclick="setQuery('Best noise cancelling headphones')" class="hover:text-brand-orange hover:underline decoration-brand-orange/50 underline-offset-4 transition-all">Headphones</button>
+                <button onclick="setQuery('Top rated gaming laptops 2024')" class="hover:text-brand-orange hover:underline decoration-brand-orange/50 underline-offset-4 transition-all">Gaming Laptops</button>
+                <button onclick="setQuery('Budget friendly mechanical keyboards')" class="hover:text-brand-orange hover:underline decoration-brand-orange/50 underline-offset-4 transition-all">Keyboards</button>
+            </div>
+        </section>
+
+        <!-- Loading State -->
+        <section id="loader-section" class="hidden flex-col items-center justify-center py-20 min-h-[50vh]">
+            <div class="relative w-24 h-24 mb-8">
+                <div class="absolute inset-0 border-4 border-brand-orange/20 rounded-full"></div>
+                <div class="absolute inset-0 border-4 border-brand-orange rounded-full border-t-transparent animate-spin"></div>
+                <div class="absolute inset-0 flex items-center justify-center">
+                    <i class="fa-solid fa-brain text-brand-orange text-2xl animate-pulse"></i>
+                </div>
+            </div>
+            
+            <h3 class="font-display text-3xl font-bold mb-2 text-brand-black">Maven is thinking</h3>
+            <div class="bg-white px-6 py-2 rounded-full shadow-sm border border-gray-100 flex items-center gap-3">
+                <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                <p id="loading-text" class="text-gray-500 font-mono text-sm">Initializing agent graph...</p>
+            </div>
+        </section>
+
+        <!-- Results Section -->
+        <section id="results-section" class="hidden opacity-0 transition-opacity duration-500">
+            
+            <!-- Summary Card -->
+            <div class="bg-white rounded-3xl p-8 md:p-10 shadow-xl shadow-gray-200/50 mb-16 border border-gray-100 fade-in-up relative overflow-hidden" style="animation-delay: 0.1s">
+                <div class="absolute top-0 left-0 w-2 h-full bg-brand-orange"></div>
+                <div class="absolute -top-10 -right-10 w-40 h-40 bg-brand-orange/5 rounded-full blur-3xl"></div>
+                
+                <div class="flex flex-col md:flex-row items-start gap-6 relative z-10">
+                    <div class="bg-brand-black p-4 rounded-2xl text-white shrink-0 shadow-lg shadow-brand-orange/20">
+                        <i class="fa-solid fa-wand-magic-sparkles text-2xl"></i>
+                    </div>
+                    <div class="w-full">
+                        <h2 class="font-display text-2xl font-bold mb-4 text-brand-black">Maven's Recommendation</h2>
+                        <div id="final-recommendation" class="prose prose-lg prose-slate max-w-none text-gray-600 leading-relaxed">
+                            <!-- Recommendation text will go here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Products Grid Header -->
+            <div class="mb-8 flex flex-col md:flex-row justify-between items-end border-b border-gray-200 pb-4 gap-4">
+                <div>
+                    <h2 class="font-display text-3xl font-bold text-brand-black">Top Findings</h2>
+                    <p class="text-gray-400 mt-1">Based on deep web analysis and reviews</p>
+                </div>
+                <div class="flex gap-2">
+                    <span class="px-3 py-1 bg-white border border-gray-200 rounded-full text-xs font-bold text-gray-500">RELEVANCE</span>
+                    <span class="px-3 py-1 bg-transparent border border-transparent rounded-full text-xs font-bold text-gray-300">PRICE</span>
+                </div>
+            </div>
+
+            <!-- Products Grid -->
+            <div id="products-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                <!-- Product cards injected here -->
+            </div>
+            
+            <div class="mt-20 text-center pb-10">
+                <button onclick="resetSearch()" class="group text-gray-400 hover:text-brand-orange font-medium transition-colors flex flex-col items-center mx-auto gap-2">
+                    <div class="w-12 h-12 rounded-full bg-white border border-gray-200 flex items-center justify-center group-hover:border-brand-orange transition-colors shadow-sm">
+                        <i class="fa-solid fa-arrow-up"></i>
+                    </div>
+                    <span>Start New Search</span>
+                </button>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- How It Works Modal -->
+    <div id="how-it-works-modal" class="fixed inset-0 z-50 hidden opacity-0 transition-opacity duration-300">
+        <!-- Backdrop -->
+        <div class="absolute inset-0 modal-backdrop" onclick="toggleModal()"></div>
+        
+        <!-- Modal Content -->
+        <div class="absolute inset-0 flex items-center justify-center p-4">
+            <div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto transform scale-95 transition-transform duration-300" id="modal-panel">
+                
+                <!-- Header -->
+                <div class="p-8 border-b border-gray-100 flex justify-between items-center sticky top-0 bg-white z-10">
+                    <div>
+                        <h2 class="font-display text-2xl font-bold text-brand-black">Under the Hood</h2>
+                        <p class="text-gray-500 text-sm">How Maven's LangGraph architecture works</p>
+                    </div>
+                    <button onclick="toggleModal()" class="w-10 h-10 rounded-full bg-gray-50 hover:bg-gray-100 flex items-center justify-center transition-colors">
+                        <i class="fa-solid fa-times text-gray-500"></i>
+                    </button>
+                </div>
+
+                <!-- Body -->
+                <div class="p-8">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 relative">
+                        <!-- Connecting Line (Desktop) -->
+                        <div class="hidden md:block absolute top-12 left-0 w-full h-1 bg-gray-100 -z-0"></div>
+
+                        <!-- Step 1: Manager -->
+                        <div class="relative group">
+                            <div class="w-24 h-24 bg-brand-black rounded-2xl flex items-center justify-center text-white text-3xl mx-auto mb-4 shadow-lg shadow-brand-black/20 relative z-10 group-hover:-translate-y-1 transition-transform">
+                                <i class="fa-solid fa-user-tie"></i>
+                                <div class="absolute -bottom-3 bg-brand-orange text-white text-[10px] font-bold px-2 py-0.5 rounded-full">PLAN</div>
+                            </div>
+                            <h3 class="text-center font-bold text-lg mb-2">Manager</h3>
+                            <p class="text-center text-sm text-gray-500">Analyzes your query and delegates tasks to the research team.</p>
+                        </div>
+
+                        <!-- Step 2: Researcher -->
+                        <div class="relative group">
+                            <div class="w-24 h-24 bg-white border-2 border-brand-orange rounded-2xl flex items-center justify-center text-brand-orange text-3xl mx-auto mb-4 shadow-lg shadow-brand-orange/10 relative z-10 group-hover:-translate-y-1 transition-transform">
+                                <i class="fa-solid fa-globe"></i>
+                                <div class="absolute -bottom-3 bg-brand-orange text-white text-[10px] font-bold px-2 py-0.5 rounded-full">SEARCH</div>
+                            </div>
+                            <h3 class="text-center font-bold text-lg mb-2">Researcher</h3>
+                            <p class="text-center text-sm text-gray-500">Scrapes the web (Tavily) to find top product candidates.</p>
+                        </div>
+
+                        <!-- Step 3: Specialist -->
+                        <div class="relative group">
+                            <div class="w-24 h-24 bg-white border border-gray-200 rounded-2xl flex items-center justify-center text-brand-black text-3xl mx-auto mb-4 shadow-sm relative z-10 group-hover:-translate-y-1 transition-transform">
+                                <i class="fa-solid fa-microscope"></i>
+                                <div class="absolute -bottom-3 bg-gray-800 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">ANALYZE</div>
+                            </div>
+                            <h3 class="text-center font-bold text-lg mb-2">Specialist</h3>
+                            <p class="text-center text-sm text-gray-500">Deep dives into specs, reads reviews, and weighs pros/cons.</p>
+                        </div>
+
+                        <!-- Step 4: Formatter -->
+                        <div class="relative group">
+                            <div class="w-24 h-24 bg-beige-200 rounded-2xl flex items-center justify-center text-brand-black text-3xl mx-auto mb-4 shadow-inner relative z-10 group-hover:-translate-y-1 transition-transform">
+                                <i class="fa-solid fa-pen-fancy"></i>
+                                <div class="absolute -bottom-3 bg-gray-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">REPORT</div>
+                            </div>
+                            <h3 class="text-center font-bold text-lg mb-2">Formatter</h3>
+                            <p class="text-center text-sm text-gray-500">Compiles all data into the beautiful UI you see here.</p>
+                        </div>
+                    </div>
+
+                    <div class="mt-12 bg-beige-50 p-6 rounded-2xl border border-beige-200">
+                        <h4 class="font-bold text-brand-black mb-2 flex items-center gap-2">
+                            <i class="fa-solid fa-code text-brand-orange"></i> Tech Stack
+                        </h4>
+                        <div class="flex flex-wrap gap-2">
+                            <span class="px-3 py-1 bg-white border border-gray-200 rounded-md text-xs font-mono text-gray-600">Python</span>
+                            <span class="px-3 py-1 bg-white border border-gray-200 rounded-md text-xs font-mono text-gray-600">FastAPI</span>
+                            <span class="px-3 py-1 bg-white border border-gray-200 rounded-md text-xs font-mono text-gray-600">LangGraph</span>
+                            <span class="px-3 py-1 bg-white border border-gray-200 rounded-md text-xs font-mono text-gray-600">TailwindCSS</span>
+                            <span class="px-3 py-1 bg-white border border-gray-200 rounded-md text-xs font-mono text-gray-600">Groq LLM</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Logic -->
+    <script>
+        const searchForm = document.getElementById('search-form');
+        const searchSection = document.getElementById('search-section');
+        const loaderSection = document.getElementById('loader-section');
+        const resultsSection = document.getElementById('results-section');
+        const loadingText = document.getElementById('loading-text');
+        const modal = document.getElementById('how-it-works-modal');
+        const modalPanel = document.getElementById('modal-panel');
+        
+        // --- Modal Logic ---
+        function toggleModal() {
+            if (modal.classList.contains('hidden')) {
+                // Open
+                modal.classList.remove('hidden');
+                // Trigger reflow
+                void modal.offsetWidth;
+                modal.classList.remove('opacity-0');
+                modalPanel.classList.remove('scale-95');
+                modalPanel.classList.add('scale-100');
+            } else {
+                // Close
+                modal.classList.add('opacity-0');
+                modalPanel.classList.remove('scale-100');
+                modalPanel.classList.add('scale-95');
+                setTimeout(() => {
+                    modal.classList.add('hidden');
+                }, 300);
+            }
+        }
+
+        // --- Search Logic ---
+        function setQuery(text) {
+            document.getElementById('query-input').value = text;
+        }
+
+        // Loading messages simulation (Matches Backend Agents)
+        const loadingMessages = [
+            "Manager Agent: Analyzing intent...",
+            "Primary Researcher: Searching Tavily API...",
+            "Product Specialist: Analyzing feature specs...",
+            "Product Specialist: Reading pros & cons...",
+            "Formatter Agent: Compiling final JSON..."
+        ];
+
+        searchForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const query = document.getElementById('query-input').value;
+
+            // UI Transitions
+            searchSection.classList.add('hidden'); 
+            loaderSection.classList.remove('hidden');
+            loaderSection.classList.add('flex');
+            
+            // Cycle through loading messages
+            let msgIndex = 0;
+            const msgInterval = setInterval(() => {
+                loadingText.innerText = loadingMessages[msgIndex % loadingMessages.length];
+                msgIndex++;
+            }, 2000);
+
+            try {
+                // NOTE: Ensuring the fetch path matches your python main.py endpoint
+                const response = await fetch('/api/research', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ query: query })
+                });
+
+                if (!response.ok) throw new Error('Network response was not ok');
+                
+                const data = await response.json();
+                
+                clearInterval(msgInterval);
+                displayResults(data);
+
+            } catch (error) {
+                clearInterval(msgInterval);
+                loaderSection.classList.add('hidden');
+                loaderSection.classList.remove('flex');
+                searchSection.classList.remove('hidden');
+                alert("Maven Error: " + error.message);
+            }
+        });
+
+        function displayResults(data) {
+            loaderSection.classList.add('hidden');
+            loaderSection.classList.remove('flex');
+            
+            resultsSection.classList.remove('hidden');
+            // Trigger reflow for fade in
+            void resultsSection.offsetWidth;
+            resultsSection.classList.remove('opacity-0');
+
+            // Set Recommendation - Render Markdown
+            const recommendationText = data.final_recommendation || "No recommendation generated.";
+            const recommendationElement = document.getElementById('final-recommendation');
+            
+            // Parse markdown and render as HTML
+            if (typeof marked !== 'undefined') {
+                recommendationElement.innerHTML = marked.parse(recommendationText);
+            } else {
+                recommendationElement.innerText = recommendationText;
+            }
+
+            // Render Products
+            const grid = document.getElementById('products-grid');
+            grid.innerHTML = ''; // Clear previous
+
+            data.products.forEach((product, index) => {
+                // Formatting Rating
+                const ratingVal = product.rating ? product.rating : 'N/A';
+                const ratingHtml = product.rating 
+                    ? `<span class="font-bold text-brand-black">${ratingVal}</span><span class="text-gray-400">/5</span>` 
+                    : `<span class="text-gray-400 text-sm">N/A</span>`;
+                
+                // Formatting Price
+                let priceDisplay = product.price;
+                if(priceDisplay !== "Price not available" && !String(priceDisplay).includes('$') && !String(priceDisplay).includes('£') && !isNaN(parseFloat(priceDisplay))) {
+                   priceDisplay = `$${priceDisplay}`; 
+                }
+
+                // Pros List (Max 3)
+                const prosHtml = product.pros.slice(0,3).map(pro => 
+                    `<li class="flex items-start gap-2 text-sm text-gray-600 mb-2">
+                        <i class="fa-solid fa-check text-brand-orange mt-1 text-xs"></i> 
+                        <span class="leading-tight">${pro}</span>
+                    </li>`
+                ).join('');
+
+                const delay = (index + 2) * 0.1; // Stagger animation
+
+                // Image Fallback logic
+                const imgContent = product.image_url 
+                    ? `<img src="${product.image_url}" alt="${product.name}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700">`
+                    : `<div class="w-full h-full flex items-center justify-center text-beige-300 bg-beige-100"><i class="fa-solid fa-image text-4xl opacity-50"></i></div>`;
+
+                const cardHTML = `
+                <div class="bg-white rounded-3xl overflow-hidden border border-gray-100 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full fade-in-up group" style="animation-delay: ${delay}s">
+                    <div class="h-56 bg-gray-100 relative overflow-hidden">
+                        ${imgContent}
+                        <div class="absolute top-4 right-4 bg-white/95 backdrop-blur px-4 py-1.5 rounded-full text-sm font-bold shadow-sm text-brand-black">
+                            ${priceDisplay}
+                        </div>
+                    </div>
+                    
+                    <div class="p-6 flex flex-col flex-grow relative">
+                        <!-- Rating Badge overlapping image -->
+                        <div class="absolute -top-6 left-6 bg-brand-black text-white px-3 py-1.5 rounded-xl shadow-lg flex items-center gap-1.5 text-sm">
+                            <i class="fa-solid fa-star text-brand-orange text-xs"></i>
+                            ${ratingVal}
+                        </div>
+
+                        <div class="mt-4 mb-3">
+                            <h3 class="font-display font-bold text-xl leading-snug line-clamp-2 mb-1 group-hover:text-brand-orange transition-colors" title="${product.name}">${product.name}</h3>
+                            <div class="text-xs text-gray-400 font-mono">${product.reviews_count || 'Unknown'} verified reviews</div>
+                        </div>
+
+                        <div class="mb-6 flex-grow bg-beige-50/50 p-4 rounded-xl">
+                            <h4 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">KEY FINDINGS</h4>
+                            <ul>
+                                ${prosHtml}
+                            </ul>
+                        </div>
+
+                        <div class="pt-2 mt-auto">
+                             ${product.why_to_buy ? 
+                                `<div class="text-xs text-gray-500 italic mb-4 pl-3 border-l-2 border-brand-orange/30">
+                                    "${product.why_to_buy.substring(0, 100)}${product.why_to_buy.length > 100 ? '...' : ''}"
+                                </div>` 
+                                : ''
+                            }
+                            <a href="${product.url}" target="_blank" class="flex items-center justify-center w-full bg-brand-black text-white font-medium py-3.5 rounded-xl hover:bg-brand-orange transition-all duration-300 shadow-lg shadow-gray-200 hover:shadow-brand-orange/30 gap-2">
+                                <span>View Product</span>
+                                <i class="fa-solid fa-external-link-alt text-xs opacity-70"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                `;
+                grid.innerHTML += cardHTML;
+            });
+        }
+
+        function resetSearch() {
+            resultsSection.classList.add('hidden');
+            resultsSection.classList.add('opacity-0');
+            searchForm.reset();
+            searchSection.classList.remove('hidden');
+            document.getElementById('query-input').focus();
+        }
+    </script>
+</body>
+</html>
