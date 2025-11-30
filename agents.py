@@ -9,6 +9,11 @@ from dotenv import load_dotenv
 from models import Product, ResearchResponse, RetailerPrice
 import json
 import re
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin, urlparse
+from PIL import Image
+from io import BytesIO
 
 def parse_json_output(text):
     # Remove <think>...</think> blocks
@@ -102,34 +107,272 @@ class ImageSearchAgent:
     """Agent specialized in finding accurate product images"""
     def __init__(self):
         self.llm = gemini_llm
-        self.search_tool = ddg_search
+        self.search_tool = tavily_tool
+        self.official_domains = [
+            'amazon.com', 'bestbuy.com', 'walmart.com', 'target.com',
+            'newegg.com', 'bhphotovideo.com', 'apple.com', 'samsung.com',
+            'dell.com', 'hp.com', 'lenovo.com', 'microsoft.com', 'sony.com',
+            'lg.com', 'costco.com', 'homedepot.com', 'lowes.com'
+        ]
+
+    def validate_image(self, image_url: str, product_name: str):
+        """Validate image by checking if it loads and extracting metadata"""
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            response = requests.get(image_url, headers=headers, timeout=10, stream=True)
+            response.raise_for_status()
+            
+            # Check content type
+            content_type = response.headers.get('Content-Type', '')
+            if 'image' not in content_type.lower():
+                return None
+            
+            # Load image to verify it's valid and get metadata
+            image = Image.open(BytesIO(response.content))
+            width, height = image.size
+            
+            # Filter out small images (likely icons/thumbnails)
+            if width < 200 or height < 200:
+                return None
+            
+            # Extract image metadata (EXIF, format, mode)
+            metadata = {
+                'url': image_url,
+                'width': width,
+                'height': height,
+                'format': image.format,
+                'mode': image.mode,
+                'size_kb': len(response.content) / 1024,
+                'aspect_ratio': round(width / height, 2)
+            }
+            
+            # Get alt text and description from URL
+            url_lower = image_url.lower()
+            metadata['has_product_keywords'] = any(
+                keyword in url_lower for keyword in product_name.lower().split()[:3]
+            )
+            
+            return metadata
+        except Exception as e:
+            print(f"Error validating image {image_url}: {e}")
+            return None
+
+    def scrape_product_images(self, url: str, product_name: str = ""):
+        """Scrape product page to extract and validate image URLs"""
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.content, 'html.parser')
+            image_candidates = []
+            
+            # Check if URL is from official/trusted domain
+            domain = urlparse(url).netloc.lower()
+            is_official = any(official in domain for official in self.official_domains)
+            
+            # Look for Open Graph images (commonly used for product images)
+            og_image = soup.find('meta', property='og:image')
+            if og_image and og_image.get('content'):
+                image_candidates.append({
+                    'url': og_image['content'],
+                    'source': 'og_image',
+                    'priority': 10 if is_official else 8
+                })
+            
+            # Look for Twitter card images
+            twitter_image = soup.find('meta', attrs={'name': 'twitter:image'})
+            if twitter_image and twitter_image.get('content'):
+                image_candidates.append({
+                    'url': twitter_image['content'],
+                    'source': 'twitter_image',
+                    'priority': 9 if is_official else 7
+                })
+            
+            # Look for structured data (JSON-LD)
+            json_ld_scripts = soup.find_all('script', type='application/ld+json')
+            for script in json_ld_scripts:
+                try:
+                    data = json.loads(script.string)
+                    if isinstance(data, dict):
+                        if 'image' in data:
+                            img_data = data['image']
+                            if isinstance(img_data, str):
+                                image_candidates.append({
+                                    'url': img_data,
+                                    'source': 'json_ld',
+                                    'priority': 10 if is_official else 8
+                                })
+                            elif isinstance(img_data, list) and img_data:
+                                image_candidates.append({
+                                    'url': img_data[0],
+                                    'source': 'json_ld',
+                                    'priority': 10 if is_official else 8
+                                })
+                except:
+                    pass
+            
+            # Look for product-specific image tags
+            product_images = soup.find_all('img', class_=lambda x: x and any(
+                keyword in x.lower() for keyword in ['product', 'main', 'primary', 'hero', 'gallery']
+            ))
+            
+            for img in product_images[:5]:
+                src = img.get('src') or img.get('data-src') or img.get('data-lazy-src')
+                alt = img.get('alt', '')
+                if src:
+                    absolute_url = urljoin(url, src)
+                    if absolute_url.startswith('http'):
+                        # Higher priority if alt text contains product keywords
+                        priority = 7 if is_official else 5
+                        if product_name and any(kw in alt.lower() for kw in product_name.lower().split()[:3]):
+                            priority += 1
+                        
+                        image_candidates.append({
+                            'url': absolute_url,
+                            'source': 'product_img_class',
+                            'alt': alt,
+                            'priority': priority
+                        })
+            
+            # Look for any large images if we haven't found enough
+            if len(image_candidates) < 5:
+                all_images = soup.find_all('img')
+                for img in all_images:
+                    src = img.get('src') or img.get('data-src')
+                    alt = img.get('alt', '')
+                    if src:
+                        absolute_url = urljoin(url, src)
+                        # Filter out small icons and logos
+                        if absolute_url.startswith('http') and not any(
+                            x in absolute_url.lower() for x in ['icon', 'logo', 'sprite', 'pixel', 'blank', 'avatar']
+                        ):
+                            image_candidates.append({
+                                'url': absolute_url,
+                                'source': 'img_tag',
+                                'alt': alt,
+                                'priority': 3 if is_official else 2
+                            })
+                            if len(image_candidates) >= 15:
+                                break
+            
+            # Remove duplicates
+            seen_urls = set()
+            unique_candidates = []
+            for candidate in image_candidates:
+                if candidate['url'] not in seen_urls:
+                    seen_urls.add(candidate['url'])
+                    unique_candidates.append(candidate)
+            
+            return unique_candidates
+        except Exception as e:
+            print(f"Error scraping images from {url}: {e}")
+            return []
 
     def find_product_image(self, product_name: str, product_url: str = ""):
-        """Find single best product image using DuckDuckGo image search"""
+        """Find single best product image using web scraping, validation, and metadata analysis"""
         try:
-            # Search for product images
-            search_query = f"{product_name} official product image buy"
-            search_results = self.search_tool.invoke({"query": search_query})
+            all_candidates = []
             
-            # Use LLM to extract and validate the best image URL
+            # First, try scraping the product URL if provided
+            if product_url and product_url.startswith('http'):
+                candidates = self.scrape_product_images(product_url, product_name)
+                all_candidates.extend(candidates)
+            
+            # If no images found or no URL provided, search for official product pages
+            if len(all_candidates) < 5:
+                # Prioritize official retailers and manufacturer sites
+                search_query = f"{product_name} site:amazon.com OR site:bestbuy.com OR site:walmart.com OR site:target.com official product"
+                search_results = self.search_tool.invoke({"query": search_query})
+                
+                # Try scraping images from search result URLs (prioritize official domains)
+                if isinstance(search_results, list):
+                    for result in search_results[:4]:
+                        if isinstance(result, dict) and 'url' in result:
+                            candidates = self.scrape_product_images(result['url'], product_name)
+                            all_candidates.extend(candidates)
+                            if len(all_candidates) >= 20:
+                                break
+            
+            if not all_candidates:
+                return ""
+            
+            # Sort candidates by priority
+            all_candidates.sort(key=lambda x: x.get('priority', 0), reverse=True)
+            
+            # Validate top candidates (check if images load and get metadata)
+            validated_images = []
+            for candidate in all_candidates[:10]:  # Check top 10
+                metadata = self.validate_image(candidate['url'], product_name)
+                if metadata:
+                    # Combine candidate info with validation metadata
+                    metadata['source'] = candidate.get('source', 'unknown')
+                    metadata['priority'] = candidate.get('priority', 0)
+                    metadata['alt'] = candidate.get('alt', '')
+                    
+                    # Boost priority for official domains
+                    domain = urlparse(metadata['url']).netloc.lower()
+                    if any(official in domain for official in self.official_domains):
+                        metadata['priority'] += 2
+                    
+                    # Boost priority for images with product keywords
+                    if metadata['has_product_keywords']:
+                        metadata['priority'] += 1
+                    
+                    # Boost priority for large, high-quality images
+                    if metadata['width'] >= 800 and metadata['height'] >= 800:
+                        metadata['priority'] += 1
+                    
+                    validated_images.append(metadata)
+                
+                if len(validated_images) >= 5:
+                    break
+            
+            if not validated_images:
+                # Fallback to first candidate without validation
+                return all_candidates[0]['url'] if all_candidates else ""
+            
+            # Use LLM to pick the best image from validated candidates with full metadata
             prompt = ChatPromptTemplate.from_messages([
-                ("system", """You are an Image Specialist. Extract the SINGLE BEST product image URL from search results.
+                ("system", """You are an Image Specialist with access to validated image metadata. Select the SINGLE BEST product image.
 Return ONLY a JSON object with 'image_url' (a single valid image URL string).
-Prioritize:
-1. Official product images from manufacturer or major retailers (Amazon, Best Buy, Walmart)
-2. High-resolution images showing the product clearly
-3. Images with proper HTTPS URLs ending in .jpg, .png, or .webp
+
+Analyze the metadata for each image:
+- priority: higher is better (considers source, domain, alt text)
+- width/height: prefer larger images (800x800+)
+- source: og_image, twitter_image, json_ld are most reliable
+- has_product_keywords: true if URL contains product name
+- size_kb: reasonable file size (not too small = icon, not too large = slow)
+
+Prioritize in this order:
+1. Official retailer sites (Amazon, Best Buy, Walmart, Target) with high resolution
+2. Meta tag images (og:image, twitter:image, JSON-LD) - these are curated by the website
+3. Images with product keywords in URL or alt text
+4. Large, high-quality images (800x800 or larger)
+5. Reasonable aspect ratio (square or landscape, not banner-shaped)
+
 Do not include any <think> tags or explanation."""),
-                ("user", "Product: {product_name}\nSearch Results: {search_results}\n\nExtract the single best product image URL.")
+                ("user", "Product: {product_name}\n\nValidated Images with Metadata:\n{validated_images}\n\nSelect the single best product image URL based on metadata analysis.")
             ])
             chain = prompt | self.llm | StrOutputParser()
-            response_text = chain.invoke({"product_name": product_name, "search_results": str(search_results)})
+            response_text = chain.invoke({
+                "product_name": product_name,
+                "validated_images": json.dumps(validated_images, indent=2)
+            })
             result = parse_json_output(response_text)
             
             # Return single image URL
             if isinstance(result, dict) and 'image_url' in result:
                 return result['image_url']
-            return ""
+            
+            # Fallback: return highest priority validated image
+            validated_images.sort(key=lambda x: x.get('priority', 0), reverse=True)
+            return validated_images[0]['url'] if validated_images else ""
+            
         except Exception as e:
             print(f"Error finding image for {product_name}: {e}")
             return ""
