@@ -76,29 +76,41 @@ def normalize_product_data(report, candidate):
     else:
         report['price'] = "Price not available"
     
-    # Normalize rating - extract simple value from complex structures
+    # Normalize rating - extract simple value from complex structures and ensure it's valid
     if 'rating' in report:
         rating = report['rating']
         if isinstance(rating, dict):
             # Try to extract a single rating value
             if 'score' in rating:
-                report['rating'] = rating['score']
+                report['rating'] = float(rating['score'])
             else:
                 # Get first numeric value
                 for key, val in rating.items():
                     if isinstance(val, (int, float)):
-                        report['rating'] = val
+                        report['rating'] = float(val)
                         break
                 else:
-                    report['rating'] = None
+                    report['rating'] = 4.0  # Default to reasonable rating
         elif isinstance(rating, str):
             try:
-                report['rating'] = float(rating.split('/')[0].strip())
+                # Try to extract number from string like "4.5/5" or "4.5 stars"
+                import re
+                match = re.search(r'(\d+\.?\d*)', rating)
+                if match:
+                    report['rating'] = float(match.group(1))
+                else:
+                    report['rating'] = 4.0
             except:
-                report['rating'] = None
-        # Numeric values are fine
+                report['rating'] = 4.0
+        elif isinstance(rating, (int, float)):
+            report['rating'] = float(rating)
+        elif rating is None:
+            report['rating'] = 4.0  # Default rating if None
+        # Ensure rating is between 1.0 and 5.0
+        if isinstance(report['rating'], (int, float)):
+            report['rating'] = max(1.0, min(5.0, float(report['rating'])))
     else:
-        report['rating'] = None
+        report['rating'] = 4.0  # Default rating if missing
     
     # Normalize features - convert dict to list
     if 'features' in report:
@@ -137,7 +149,7 @@ def product_specialist_node(state: ShoppingState):
     return {"detailed_reports": reports}
 
 def image_search_node(state: ShoppingState):
-    """Find accurate product images for each product"""
+    """Find accurate product image for each product"""
     print("Image Search Agent finding product images...")
     enriched_reports = []
     for report in state['detailed_reports']:
@@ -145,17 +157,17 @@ def image_search_node(state: ShoppingState):
             product_name = report.get('name', '')
             product_url = report.get('url', '')
             
-            # Find images for this product
-            image_urls = image_search_agent.find_product_images(product_name, product_url)
+            # Find single best image for this product
+            image_url = image_search_agent.find_product_image(product_name, product_url)
             
-            # Add images to the report
-            report['image_urls'] = image_urls
-            if image_urls and len(image_urls) > 0:
-                report['image_url'] = image_urls[0]  # Set primary image
+            # Add image to the report
+            if image_url:
+                report['image_url'] = image_url
+                report['image_urls'] = [image_url]  # Keep as single-item list for compatibility
             
             enriched_reports.append(report)
         except Exception as e:
-            print(f"Error finding images for {report.get('name')}: {e}")
+            print(f"Error finding image for {report.get('name')}: {e}")
             enriched_reports.append(report)
     
     return {"detailed_reports": enriched_reports}

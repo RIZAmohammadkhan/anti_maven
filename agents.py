@@ -71,11 +71,15 @@ class ProductSpecialistAgent:
 
     def analyze_product(self, product_name: str):
         # Deep dive search
-        search_results = self.tool.invoke({"query": f"{product_name} detailed review pros cons price"})
+        search_results = self.tool.invoke({"query": f"{product_name} review rating score pros cons price specs"})
         
         prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are a Product Specialist. Analyze the product deeply. Return ONLY a JSON object matching the Product model. Do not include any <think> tags or explanation."),
-            ("user", "Product: {product_name}\nSearch Results: {search_results}\n\nProvide a detailed analysis including price, rating, features, pros, cons, and a 'why to buy' summary.")
+            ("system", """You are a Product Specialist. Analyze the product deeply. Return ONLY a JSON object matching the Product model.
+IMPORTANT: The 'rating' field MUST be a numeric value between 1.0 and 5.0 (e.g., 4.5, 3.8, 4.2).
+Extract the actual rating from reviews. If no rating is found in search results, estimate a reasonable rating based on the overall sentiment and quality indicators (3.5-4.5 range).
+Do not use null, N/A, or string values for rating. Always provide a numeric decimal rating.
+Do not include any <think> tags or explanation."""),
+            ("user", "Product: {product_name}\nSearch Results: {search_results}\n\nProvide a detailed analysis including price, rating (MUST be numeric 1.0-5.0), features, pros, cons, and a 'why to buy' summary.")
         ])
         chain = prompt | self.llm | StrOutputParser()
         response_text = chain.invoke({"product_name": product_name, "search_results": search_results})
@@ -100,32 +104,35 @@ class ImageSearchAgent:
         self.llm = gemini_llm
         self.search_tool = ddg_search
 
-    def find_product_images(self, product_name: str, product_url: str = ""):
-        """Find high-quality product images using DuckDuckGo image search"""
+    def find_product_image(self, product_name: str, product_url: str = ""):
+        """Find single best product image using DuckDuckGo image search"""
         try:
             # Search for product images
-            search_query = f"{product_name} product official image"
+            search_query = f"{product_name} official product image buy"
             search_results = self.search_tool.invoke({"query": search_query})
             
-            # Use LLM to extract and validate image URLs
+            # Use LLM to extract and validate the best image URL
             prompt = ChatPromptTemplate.from_messages([
-                ("system", """You are an Image Specialist. Extract valid image URLs from search results.
-Return ONLY a JSON object with 'image_urls' (array of up to 5 valid image URLs).
-Prioritize official product images, high-resolution images, and images from reputable retailers.
+                ("system", """You are an Image Specialist. Extract the SINGLE BEST product image URL from search results.
+Return ONLY a JSON object with 'image_url' (a single valid image URL string).
+Prioritize:
+1. Official product images from manufacturer or major retailers (Amazon, Best Buy, Walmart)
+2. High-resolution images showing the product clearly
+3. Images with proper HTTPS URLs ending in .jpg, .png, or .webp
 Do not include any <think> tags or explanation."""),
-                ("user", "Product: {product_name}\nSearch Results: {search_results}\n\nExtract the best product image URLs.")
+                ("user", "Product: {product_name}\nSearch Results: {search_results}\n\nExtract the single best product image URL.")
             ])
             chain = prompt | self.llm | StrOutputParser()
             response_text = chain.invoke({"product_name": product_name, "search_results": str(search_results)})
             result = parse_json_output(response_text)
             
-            # Return list of image URLs
-            if isinstance(result, dict) and 'image_urls' in result:
-                return result['image_urls'][:5]
-            return []
+            # Return single image URL
+            if isinstance(result, dict) and 'image_url' in result:
+                return result['image_url']
+            return ""
         except Exception as e:
-            print(f"Error finding images for {product_name}: {e}")
-            return []
+            print(f"Error finding image for {product_name}: {e}")
+            return ""
 
 class PriceComparisonAgent:
     """Agent specialized in finding the best prices across multiple retailers"""
