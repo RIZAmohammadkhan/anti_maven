@@ -3,6 +3,31 @@ from langgraph.graph import StateGraph, END
 from agents import ManagerAgent, PrimaryResearcherAgent, ProductSpecialistAgent, ScraperFormatterAgent, ImageSearchAgent, PriceComparisonAgent
 from models import Product, ResearchResponse
 
+# Global progress callback registry
+_progress_callback = None
+
+def set_progress_callback(callback):
+    """Set the global progress callback function"""
+    global _progress_callback
+    _progress_callback = callback
+
+def clear_progress_callback():
+    """Clear the global progress callback"""
+    global _progress_callback
+    _progress_callback = None
+
+def emit_progress(message: str):
+    """Emit progress message to UI if callback is available"""
+    global _progress_callback
+    # Always print for console logging
+    print(message)
+    # Send to UI if callback is set
+    if _progress_callback:
+        try:
+            _progress_callback(message)
+        except Exception as e:
+            print(f"Error in progress callback: {e}")
+
 # Define State
 class ShoppingState(TypedDict):
     query: str
@@ -20,16 +45,20 @@ price_comparison_agent = PriceComparisonAgent()
 
 # Define Nodes
 def manager_node(state: ShoppingState):
-    # Here, we just pass through, but we could analyze the query first.
-    print(f"Manager received query: {state['query']}")
+    emit_progress(f" Analyzing query '{state['query'][:50]}...'")
+    emit_progress(" Planning research strategy...")
     return {}
 
 def primary_research_node(state: ShoppingState):
-    print("Primary Researcher finding products...")
+    emit_progress("Searching the web for top products...")
+    emit_progress("Querying Tavily API for latest results...")
     candidates = primary_researcher.search_products(state['query'])
     # Ensure candidates is a list
     if isinstance(candidates, dict) and 'products' in candidates:
         candidates = candidates['products']
+    
+    candidate_count = len(candidates) if isinstance(candidates, list) else 0
+    emit_progress(f"Found {candidate_count} product candidates")
     return {"product_candidates": candidates}
 
 def normalize_product_data(report, candidate):
@@ -135,27 +164,38 @@ def normalize_product_data(report, candidate):
     return report
 
 def product_specialist_node(state: ShoppingState):
-    print("Product Specialists analyzing...")
+    emit_progress(f"Analyzing {len(state['product_candidates'])} products in detail...")
     reports = []
     # This loop simulates parallel execution. In a real production env, 
     # we would use map-reduce or parallel execution features of LangGraph.
-    for candidate in state['product_candidates']:
+    for idx, candidate in enumerate(state['product_candidates'], 1):
         try:
+            product_name = candidate.get('name', 'Unknown')
+            emit_progress(f"🔬 Product Specialist: Analyzing {product_name} ({idx}/{len(state['product_candidates'])})")
+            emit_progress(f"🔬 Product Specialist: Reading reviews and specs for {product_name}...")
+            
             report = product_specialist.analyze_product(candidate['name'])
             normalized_report = normalize_product_data(report, candidate)
             reports.append(normalized_report)
+            
+            emit_progress(f"Completed analysis for {product_name}")
         except Exception as e:
+            emit_progress(f"Error analyzing {candidate.get('name')}: {e}")
             print(f"Error analyzing {candidate.get('name')}: {e}")
+    
+    emit_progress(f"Finished analyzing all {len(reports)} products")
     return {"detailed_reports": reports}
 
 def image_search_node(state: ShoppingState):
     """Find accurate product image for each product"""
-    print("Image Search Agent finding product images...")
+    emit_progress(f"Finding product images for {len(state['detailed_reports'])} products...")
     enriched_reports = []
-    for report in state['detailed_reports']:
+    for idx, report in enumerate(state['detailed_reports'], 1):
         try:
             product_name = report.get('name', '')
             product_url = report.get('url', '')
+            
+            emit_progress(f"Searching for {product_name} image ({idx}/{len(state['detailed_reports'])})")
             
             # Find single best image for this product
             image_url = image_search_agent.find_product_image(product_name, product_url)
@@ -164,9 +204,13 @@ def image_search_node(state: ShoppingState):
             if image_url:
                 report['image_url'] = image_url
                 report['image_urls'] = [image_url]  # Keep as single-item list for compatibility
+                emit_progress(f"Found image for {product_name}")
+            else:
+                emit_progress(f"No image found for {product_name}")
             
             enriched_reports.append(report)
         except Exception as e:
+            emit_progress(f"Error finding image for {report.get('name')}: {e}")
             print(f"Error finding image for {report.get('name')}: {e}")
             enriched_reports.append(report)
     
@@ -174,11 +218,13 @@ def image_search_node(state: ShoppingState):
 
 def price_comparison_node(state: ShoppingState):
     """Compare prices across multiple retailers"""
-    print("Price Comparison Agent finding best deals...")
+    emit_progress(f"Searching for best deals across retailers...")
     enriched_reports = []
-    for report in state['detailed_reports']:
+    for idx, report in enumerate(state['detailed_reports'], 1):
         try:
             product_name = report.get('name', '')
+            
+            emit_progress(f"Checking prices for {product_name} ({idx}/{len(state['detailed_reports'])})")
             
             # Get price comparison data
             price_data = price_comparison_agent.compare_prices(product_name)
@@ -207,21 +253,25 @@ def price_comparison_node(state: ShoppingState):
                 if prices:
                     min_price = min(prices)
                     report['price'] = f"${min_price:.2f}"
+                    emit_progress(f"Best price for {product_name}: ${min_price:.2f}")
             
             enriched_reports.append(report)
         except Exception as e:
+            emit_progress(f"Error comparing prices for {report.get('name')}: {e}")
             print(f"Error comparing prices for {report.get('name')}: {e}")
             enriched_reports.append(report)
     
     return {"detailed_reports": enriched_reports}
 
 def scraper_formatter_node(state: ShoppingState):
-    print("Formatting final response...")
+    emit_progress("Compiling final recommendation...")
+    emit_progress("Generating markdown summary...")
     response = scraper_formatter.format_results(state['detailed_reports'], state['query'])
     final_response = {
         "products": state['detailed_reports'],
         "final_recommendation": response.get("final_recommendation", "Here are the top products found.")
     }
+    emit_progress("Research complete!")
     return {"final_response": final_response}
 
 # Build Graph

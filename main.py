@@ -1,11 +1,14 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from agent_graph import app as graph_app
+from agent_graph import app as graph_app, set_progress_callback, clear_progress_callback
 from models import ResearchRequest, ResearchResponse
 import os
+import json
+import asyncio
+from typing import Callable, Optional
 
 app = FastAPI()
 
@@ -18,14 +21,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
+def execute_research(query: str, progress_callback: Optional[Callable] = None):
+    """Execute research with optional progress callback"""
+    initial_state = {"query": query, "product_candidates": [], "detailed_reports": [], "final_response": {}}
+    
+    # Set callback for nodes to access
+    if progress_callback:
+        set_progress_callback(progress_callback)
+    
+    try:
+        result = graph_app.invoke(initial_state)
+    finally:
+        # Clean up callback
+        clear_progress_callback()
+    
+    return result
 
 @app.post("/api/research", response_model=ResearchResponse)
 async def research(request: ResearchRequest):
     try:
         print(f"Received research request: {request.query}")
-        initial_state = {"query": request.query, "product_candidates": [], "detailed_reports": [], "final_response": {}}
-        result = graph_app.invoke(initial_state)
+        result = execute_research(request.query)
         
         final_response = result.get("final_response", {})
         if not final_response:
@@ -35,6 +51,64 @@ async def research(request: ResearchRequest):
     except Exception as e:
         print(f"Error processing request: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/research/stream")
+async def research_stream(query: str):
+    """Stream research progress using Server-Sent Events"""
+    async def event_generator():
+        try:
+            # Queue to collect progress messages
+            message_queue = asyncio.Queue()
+            loop = asyncio.get_event_loop()
+            
+            def progress_callback(message: str):
+                """Callback to send progress updates - thread-safe"""
+                try:
+                    # Use call_soon_threadsafe to safely add to queue from another thread
+                    loop.call_soon_threadsafe(message_queue.put_nowait, message)
+                except Exception as e:
+                    print(f"Error in progress_callback: {e}")
+            
+            # Start research in a separate thread
+            import concurrent.futures
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            
+            # Run research in background
+            future = executor.submit(execute_research, query, progress_callback)
+            
+            # Stream progress messages
+            while not future.done():
+                try:
+                    message = await asyncio.wait_for(message_queue.get(), timeout=0.5)
+                    yield f"data: {json.dumps({'type': 'progress', 'message': message})}\n\n"
+                except asyncio.TimeoutError:
+                    # Send heartbeat
+                    yield f": heartbeat\n\n"
+            
+            # Get remaining messages
+            while not message_queue.empty():
+                try:
+                    message = message_queue.get_nowait()
+                    yield f"data: {json.dumps({'type': 'progress', 'message': message})}\n\n"
+                except:
+                    break
+            
+            # Get result
+            result = future.result()
+            final_response = result.get("final_response", {})
+            
+            if not final_response:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Failed to generate research response'})}\n\n"
+            else:
+                yield f"data: {json.dumps({'type': 'complete', 'data': final_response})}\n\n"
+            
+        except Exception as e:
+            print(f"Error in stream: {e}")
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+    
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @app.get("/")
 async def read_index():
