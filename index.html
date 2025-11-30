@@ -338,10 +338,11 @@
 
                     <div class="p-6 flex flex-col flex-grow">
                         <div class="flex items-center gap-2 mb-3">
-                            <div class="flex text-brand-orange text-xs">
+                            <div class="flex text-brand-orange text-sm">
                                 ${generateStars(rating)}
                             </div>
-                            <span class="text-xs text-gray-400 font-medium">${product.reviews_count ? product.reviews_count + ' reviews' : 'Top Rated'}</span>
+                            <span class="text-sm font-bold text-brand-black">${rating}</span>
+                            <span class="text-xs text-gray-400 font-medium">(${product.reviews_count ? product.reviews_count + ' reviews' : 'Top Rated'})</span>
                         </div>
 
                         <h3 class="font-display font-bold text-lg leading-tight mb-2 line-clamp-2 h-12" title="${product.name}">
@@ -352,7 +353,7 @@
                             <button onclick="openDrawer(${index})" class="py-2.5 px-4 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:border-brand-black hover:text-brand-black transition-colors">
                                 Details
                             </button>
-                            <a href="${cheapestLink}" target="_blank" class="py-2.5 px-4 rounded-xl bg-brand-black text-white text-sm font-medium flex items-center justify-center gap-2 hover:bg-brand-orange transition-colors shadow-lg shadow-brand-black/20">
+                            <a href="${cheapestLink}" target="_blank" rel="noopener noreferrer" class="py-2.5 px-4 rounded-xl bg-brand-black text-white text-sm font-medium flex items-center justify-center gap-2 hover:bg-brand-orange transition-colors shadow-lg shadow-brand-black/20">
                                 Buy Now
                             </a>
                         </div>
@@ -401,7 +402,10 @@
                         <span class="text-2xl font-bold text-brand-black">${bestPrice}</span>
                     </div>
                     <div class="text-right">
-                        <div class="flex text-brand-orange text-sm mb-1 justify-end">${generateStars(product.rating)}</div>
+                        <div class="flex items-center gap-2 justify-end mb-1">
+                            <div class="flex text-brand-orange text-base">${generateStars(product.rating)}</div>
+                            <span class="text-lg font-bold text-brand-black">${product.rating || 'N/A'}</span>
+                        </div>
                         <span class="text-xs text-gray-400">${product.reviews_count || 'Verified'} Reviews</span>
                     </div>
                 </div>
@@ -440,7 +444,7 @@
             `;
 
             document.getElementById('drawer-footer').innerHTML = `
-                <a href="${product.cheapest_link || product.url}" target="_blank" class="w-full py-4 bg-brand-black text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-brand-orange transition-all shadow-xl shadow-brand-orange/20">
+                <a href="${product.cheapest_link || product.url}" target="_blank" rel="noopener noreferrer" class="w-full py-4 bg-brand-black text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-brand-orange transition-all shadow-xl shadow-brand-orange/20">
                     <span>Buy Now for ${bestPrice}</span>
                     <i class="fa-solid fa-arrow-right"></i>
                 </a>

@@ -1,6 +1,6 @@
 # 🛍️ MAVEN - AI Shopping Assistant
 
-**M**ulti-**A**gent **V**erification and **E**valuation **N**etwork
+**M**ulti-**A**gent **V**alue and **E**xploratory **N**etwork
 
 An intelligent shopping assistant powered by LangGraph and multiple AI agents that researches products, compares prices, finds images, and provides personalized recommendations.
 

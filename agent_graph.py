@@ -171,8 +171,8 @@ def product_specialist_node(state: ShoppingState):
     for idx, candidate in enumerate(state['product_candidates'], 1):
         try:
             product_name = candidate.get('name', 'Unknown')
-            emit_progress(f"🔬 Product Specialist: Analyzing {product_name} ({idx}/{len(state['product_candidates'])})")
-            emit_progress(f"🔬 Product Specialist: Reading reviews and specs for {product_name}...")
+            emit_progress(f"Analyzing {product_name} ({idx}/{len(state['product_candidates'])})")
+            emit_progress(f"Reading reviews and specs for {product_name}...")
             
             report = product_specialist.analyze_product(candidate['name'])
             normalized_report = normalize_product_data(report, candidate)

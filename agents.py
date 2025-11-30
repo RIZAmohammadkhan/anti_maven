@@ -27,7 +27,7 @@ load_dotenv()
 
 # Initialize LLMs
 # Using Gemini for the Manager and Formatting (High reasoning)
-gemini_llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", google_api_key=os.getenv("GOOGLE_API_KEY"))
+gemini_llm = ChatGoogleGenerativeAI(model="gemini-flash-lite-latest", google_api_key=os.getenv("GOOGLE_API_KEY"))
 
 # Using Groq for fast, parallel research tasks
 # Tools
