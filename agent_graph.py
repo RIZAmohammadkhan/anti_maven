@@ -1,7 +1,11 @@
-from typing import TypedDict, List, Annotated
-from langgraph.graph import StateGraph, END
-from agents import ManagerAgent, PrimaryResearcherAgent, ProductSpecialistAgent, ScraperFormatterAgent, ImageSearchAgent, PriceComparisonAgent
-from models import Product, ResearchResponse
+from typing import TypedDict, List
+from agents import (
+    PrimaryResearcherAgent,
+    ProductSpecialistAgent,
+    ScraperFormatterAgent,
+    ImageSearchAgent,
+    PriceComparisonAgent,
+)
 
 # Global progress callback registry
 _progress_callback = None
@@ -28,38 +32,26 @@ def emit_progress(message: str):
         except Exception as e:
             print(f"Error in progress callback: {e}")
 
-# Define State
+PLACEHOLDER_IMAGE = "https://placehold.co/800x600?text=No+Image"
+
+
 class ShoppingState(TypedDict):
     query: str
     product_candidates: List[dict]
     detailed_reports: List[dict]
     final_response: dict
 
-# Initialize Agents
-manager = ManagerAgent()
+
+# Initialize agents (lightweight, sequential orchestration)
 primary_researcher = PrimaryResearcherAgent()
 product_specialist = ProductSpecialistAgent()
 scraper_formatter = ScraperFormatterAgent()
 image_search_agent = ImageSearchAgent()
 price_comparison_agent = PriceComparisonAgent()
 
-# Define Nodes
-def manager_node(state: ShoppingState):
-    emit_progress(f" Analyzing query '{state['query'][:50]}...'")
-    emit_progress(" Planning research strategy...")
-    return {}
-
-def primary_research_node(state: ShoppingState):
-    emit_progress("Searching the web for top products...")
-    emit_progress("Querying Tavily API for latest results...")
-    candidates = primary_researcher.search_products(state['query'])
-    # Ensure candidates is a list
-    if isinstance(candidates, dict) and 'products' in candidates:
-        candidates = candidates['products']
-    
-    candidate_count = len(candidates) if isinstance(candidates, list) else 0
-    emit_progress(f"Found {candidate_count} product candidates")
-    return {"product_candidates": candidates}
+# Tunable limits to reduce external calls
+MAX_PRODUCTS = 3
+MAX_PRICE_CHECKS = 2
 
 def normalize_product_data(report, candidate):
     """Normalize product data to match the Product model schema"""
@@ -158,138 +150,110 @@ def normalize_product_data(report, candidate):
         report['cons'] = []
     
     # Ensure reviews_count is valid
-    if 'reviews_count' in report and isinstance(report['reviews_count'], dict):
-        report['reviews_count'] = None
+    if 'reviews_count' in report:
+        reviews = report['reviews_count']
+        if isinstance(reviews, dict):
+            report['reviews_count'] = None
+        elif isinstance(reviews, str):
+            try:
+                import re
+                match = re.search(r"\d+", reviews.replace(',', ''))
+                report['reviews_count'] = int(match.group()) if match else None
+            except Exception:
+                report['reviews_count'] = None
     
     return report
 
-def product_specialist_node(state: ShoppingState):
+def run_shopping_pipeline(query: str) -> dict:
+    """Sequential multi-agent orchestration with progress hooks"""
+    state: ShoppingState = {
+        "query": query,
+        "product_candidates": [],
+        "detailed_reports": [],
+        "final_response": {},
+    }
+
+    emit_progress(f"Analyzing query '{query[:50]}...'")
+
+    emit_progress(f"Searching the web for top products...")
+    candidates = primary_researcher.search_products(query)
+    if isinstance(candidates, dict) and "products" in candidates:
+        candidates = candidates["products"]
+    state["product_candidates"] = (candidates or [])[:MAX_PRODUCTS] if isinstance(candidates, list) else []
+    emit_progress(f"Found {len(state['product_candidates'])} product candidates (capped at {MAX_PRODUCTS})")
+
     emit_progress(f"Analyzing {len(state['product_candidates'])} products in detail...")
     reports = []
-    # This loop simulates parallel execution. In a real production env, 
-    # we would use map-reduce or parallel execution features of LangGraph.
-    for idx, candidate in enumerate(state['product_candidates'], 1):
+    for idx, candidate in enumerate(state["product_candidates"], 1):
+        product_name = candidate.get("name", "Unknown")
         try:
-            product_name = candidate.get('name', 'Unknown')
             emit_progress(f"Analyzing {product_name} ({idx}/{len(state['product_candidates'])})")
-            emit_progress(f"Reading reviews and specs for {product_name}...")
-            
-            report = product_specialist.analyze_product(candidate['name'])
+            report = product_specialist.analyze_product(product_name)
             normalized_report = normalize_product_data(report, candidate)
             reports.append(normalized_report)
-            
             emit_progress(f"Completed analysis for {product_name}")
-        except Exception as e:
-            emit_progress(f"Error analyzing {candidate.get('name')}: {e}")
-            print(f"Error analyzing {candidate.get('name')}: {e}")
-    
+        except Exception as exc:
+            emit_progress(f"Error analyzing {product_name}: {exc}")
+    state["detailed_reports"] = reports
     emit_progress(f"Finished analyzing all {len(reports)} products")
-    return {"detailed_reports": reports}
 
-def image_search_node(state: ShoppingState):
-    """Find accurate product image for each product"""
-    emit_progress(f"Finding product images for {len(state['detailed_reports'])} products...")
-    enriched_reports = []
-    for idx, report in enumerate(state['detailed_reports'], 1):
-        try:
-            product_name = report.get('name', '')
-            product_url = report.get('url', '')
-            
-            emit_progress(f"Searching for {product_name} image ({idx}/{len(state['detailed_reports'])})")
-            
-            # Find single best image for this product
-            image_url = image_search_agent.find_product_image(product_name, product_url)
-            
-            # Add image to the report
-            if image_url:
-                report['image_url'] = image_url
-                report['image_urls'] = [image_url]  # Keep as single-item list for compatibility
-                emit_progress(f"Found image for {product_name}")
-            else:
-                emit_progress(f"No image found for {product_name}")
-            
-            enriched_reports.append(report)
-        except Exception as e:
-            emit_progress(f"Error finding image for {report.get('name')}: {e}")
-            print(f"Error finding image for {report.get('name')}: {e}")
-            enriched_reports.append(report)
-    
-    return {"detailed_reports": enriched_reports}
+    emit_progress("Image lookup skipped per request; omitting images from results.")
+    for report in state["detailed_reports"]:
+        report["image_url"] = None
+        report["image_data"] = None
 
-def price_comparison_node(state: ShoppingState):
-    """Compare prices across multiple retailers"""
-    emit_progress(f"Searching for best deals across retailers...")
-    enriched_reports = []
-    for idx, report in enumerate(state['detailed_reports'], 1):
+    emit_progress("Searching for best deals across retailers (limited)...")
+    for idx, report in enumerate(state["detailed_reports"], 1):
+        product_name = report.get("name", "")
+        if idx > MAX_PRICE_CHECKS:
+            emit_progress(f"Skipping price comparison for {product_name} to reduce requests")
+            report["price_comparison"] = []
+            report["cheapest_link"] = report.get("url", "")
+            continue
+
+        emit_progress(f"Checking prices for {product_name} ({idx}/{len(state['detailed_reports'])})")
         try:
-            product_name = report.get('name', '')
-            
-            emit_progress(f"Checking prices for {product_name} ({idx}/{len(state['detailed_reports'])})")
-            
-            # Get price comparison data
             price_data = price_comparison_agent.compare_prices(product_name)
-            
-            # Add price comparison data to the report
-            report['price_comparison'] = price_data.get('price_comparison', [])
-            report['cheapest_link'] = price_data.get('cheapest_link', '')
-            
-            # Update the main price if we found a cheaper one
-            if price_data.get('price_comparison'):
-                prices = []
-                for retailer_price in price_data['price_comparison']:
-                    try:
-                        price_val = retailer_price.get('price', 0)
-                        if isinstance(price_val, str):
-                            # Extract numeric value from string
-                            import re
-                            match = re.search(r'[\d,]+\.?\d*', str(price_val).replace(',', ''))
-                            if match:
-                                prices.append(float(match.group()))
-                        elif isinstance(price_val, (int, float)):
-                            prices.append(float(price_val))
-                    except:
-                        continue
-                
-                if prices:
-                    min_price = min(prices)
-                    report['price'] = f"${min_price:.2f}"
-                    emit_progress(f"Best price for {product_name}: ${min_price:.2f}")
-            
-            enriched_reports.append(report)
-        except Exception as e:
-            emit_progress(f"Error comparing prices for {report.get('name')}: {e}")
-            print(f"Error comparing prices for {report.get('name')}: {e}")
-            enriched_reports.append(report)
-    
-    return {"detailed_reports": enriched_reports}
+            report["price_comparison"] = price_data.get("price_comparison", [])
+            report["cheapest_link"] = price_data.get("cheapest_link", "")
 
-def scraper_formatter_node(state: ShoppingState):
+            prices = []
+            for retailer_price in report["price_comparison"]:
+                price_val = retailer_price.get("price", 0)
+                if isinstance(price_val, str):
+                    import re
+
+                    match = re.search(r"[\d,]+\.?\d*", price_val.replace(",", ""))
+                    if match:
+                        prices.append(float(match.group()))
+                elif isinstance(price_val, (int, float)):
+                    prices.append(float(price_val))
+            if prices:
+                min_price = min(prices)
+                report["price"] = f"${min_price:.2f}"
+                emit_progress(f"Best price for {product_name}: ${min_price:.2f}")
+        except Exception as exc:
+            emit_progress(f"Error comparing prices for {product_name}: {exc}")
+
     emit_progress("Compiling final recommendation...")
-    emit_progress("Generating markdown summary...")
-    response = scraper_formatter.format_results(state['detailed_reports'], state['query'])
-    final_response = {
-        "products": state['detailed_reports'],
-        "final_recommendation": response.get("final_recommendation", "Here are the top products found.")
+    response = scraper_formatter.format_results(state["detailed_reports"], state["query"])
+    state["final_response"] = {
+        "products": state["detailed_reports"],
+        "final_recommendation": response.get(
+            "final_recommendation", "Here are the top products found."
+        ),
     }
     emit_progress("Research complete!")
-    return {"final_response": final_response}
 
-# Build Graph
-workflow = StateGraph(ShoppingState)
+    return state
 
-workflow.add_node("manager", manager_node)
-workflow.add_node("primary_researcher", primary_research_node)
-workflow.add_node("product_specialist", product_specialist_node)
-workflow.add_node("image_search", image_search_node)
-workflow.add_node("price_comparison", price_comparison_node)
-workflow.add_node("scraper_formatter", scraper_formatter_node)
 
-workflow.set_entry_point("manager")
-workflow.add_edge("manager", "primary_researcher")
-workflow.add_edge("primary_researcher", "product_specialist")
-workflow.add_edge("product_specialist", "image_search")
-workflow.add_edge("image_search", "price_comparison")
-workflow.add_edge("price_comparison", "scraper_formatter")
-workflow.add_edge("scraper_formatter", END)
+class SimpleShoppingApp:
+    """Lightweight wrapper to maintain the .invoke interface used by FastAPI"""
 
-app = workflow.compile()
+    def invoke(self, initial_state: ShoppingState):
+        query = initial_state.get("query", "") if isinstance(initial_state, dict) else ""
+        return run_shopping_pipeline(query)
+
+
+app = SimpleShoppingApp()

@@ -1,10 +1,9 @@
 import os
+import base64
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
 from langchain_tavily import TavilySearch
-from langchain_community.tools import DuckDuckGoSearchResults
 from dotenv import load_dotenv
 from models import Product, ResearchResponse, RetailerPrice
 import json
@@ -12,7 +11,7 @@ import re
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
-from PIL import Image
+from PIL import Image, ImageFile
 from io import BytesIO
 
 def parse_json_output(text):
@@ -32,12 +31,11 @@ load_dotenv()
 
 # Initialize LLMs
 # Using Gemini for the Manager and Formatting (High reasoning)
-gemini_llm = ChatGoogleGenerativeAI(model="gemini-flash-lite-latest", google_api_key=os.getenv("GOOGLE_API_KEY"))
+gemini_llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", google_api_key=os.getenv("GOOGLE_API_KEY"))
 
 # Using Groq for fast, parallel research tasks
 # Tools
-tavily_tool = TavilySearch(max_results=5)
-ddg_search = DuckDuckGoSearchResults(max_results=10)
+tavily_tool = TavilySearch(max_results=3)
 
 class ManagerAgent:
     def __init__(self):
@@ -62,8 +60,8 @@ class PrimaryResearcherAgent:
         
         # Then, use the LLM to parse these results into a list of potential products
         prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are a Primary Researcher. Your goal is to identify the top 5 promising products based on search results. Return ONLY a JSON array of objects with 'name' and 'url' keys. Do not include any <think> tags or explanation."),
-            ("user", "User Query: {query}\nSearch Results: {search_results}\n\nList the top 5 products found.")
+            ("system", "You are a Primary Researcher. Your goal is to identify the top 3 promising products based on search results. Return ONLY a JSON array of objects with 'name' and 'url' keys. Do not include any <think> tags or explanation."),
+            ("user", "User Query: {query}\nSearch Results: {search_results}\n\nList the top 3 products found.")
         ])
         chain = prompt | self.llm | StrOutputParser()
         response_text = chain.invoke({"query": query, "search_results": search_results})
@@ -118,6 +116,7 @@ class ImageSearchAgent:
     def validate_image(self, image_url: str, product_name: str):
         """Validate image by checking if it loads and extracting metadata"""
         try:
+            ImageFile.LOAD_TRUNCATED_IMAGES = True
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
@@ -158,6 +157,39 @@ class ImageSearchAgent:
         except Exception as e:
             print(f"Error validating image {image_url}: {e}")
             return None
+
+    def fetch_image_data_uri(self, image_url: str):
+        """Fetch image bytes and return as data URI for stable loading"""
+        try:
+            if not image_url:
+                return ""
+
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            response = requests.get(image_url, headers=headers, timeout=12, stream=True)
+            response.raise_for_status()
+
+            content_type = response.headers.get('Content-Type', '')
+            if 'image' not in content_type.lower():
+                return ""
+
+            content = response.content
+            if len(content) > 2_500_000:  # avoid huge payloads in response
+                return ""
+
+            ImageFile.LOAD_TRUNCATED_IMAGES = True
+            image = Image.open(BytesIO(content))
+            width, height = image.size
+            if width < 200 or height < 200:
+                return ""
+
+            mime = content_type.split(';')[0] if content_type else 'image/jpeg'
+            b64 = base64.b64encode(content).decode('ascii')
+            return f"data:{mime};base64,{b64}"
+        except Exception as e:
+            print(f"Error in fetch_image_data_uri for {image_url}: {e}")
+            return ""
 
     def scrape_product_images(self, url: str, product_name: str = ""):
         """Scrape product page to extract and validate image URLs"""
@@ -273,7 +305,7 @@ class ImageSearchAgent:
             print(f"Error scraping images from {url}: {e}")
             return []
 
-    def find_product_image(self, product_name: str, product_url: str = ""):
+    def find_product_image(self, product_name: str, product_url: str = "", allow_web_search: bool = False):
         """Find single best product image using web scraping, validation, and metadata analysis"""
         try:
             all_candidates = []
@@ -283,19 +315,16 @@ class ImageSearchAgent:
                 candidates = self.scrape_product_images(product_url, product_name)
                 all_candidates.extend(candidates)
             
-            # If no images found or no URL provided, search for official product pages
-            if len(all_candidates) < 5:
-                # Prioritize official retailers and manufacturer sites
+            # Optional secondary search to avoid extra outbound calls by default
+            if allow_web_search and len(all_candidates) < 5:
                 search_query = f"{product_name} site:amazon.com OR site:bestbuy.com OR site:walmart.com OR site:target.com official product"
                 search_results = self.search_tool.invoke({"query": search_query})
-                
-                # Try scraping images from search result URLs (prioritize official domains)
                 if isinstance(search_results, list):
-                    for result in search_results[:4]:
+                    for result in search_results[:3]:
                         if isinstance(result, dict) and 'url' in result:
                             candidates = self.scrape_product_images(result['url'], product_name)
                             all_candidates.extend(candidates)
-                            if len(all_candidates) >= 20:
+                            if len(all_candidates) >= 12:
                                 break
             
             if not all_candidates:
@@ -336,41 +365,24 @@ class ImageSearchAgent:
                 # Fallback to first candidate without validation
                 return all_candidates[0]['url'] if all_candidates else ""
             
-            # Use LLM to pick the best image from validated candidates with full metadata
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", """You are an Image Specialist with access to validated image metadata. Select the SINGLE BEST product image.
-Return ONLY a JSON object with 'image_url' (a single valid image URL string).
+            # Pick best validated image with a deterministic score (no LLM)
+            def score_image(meta: dict) -> float:
+                score = float(meta.get('priority', 0))
+                # Reward higher resolution
+                if meta.get('width', 0) >= 800 and meta.get('height', 0) >= 800:
+                    score += 2.0
+                elif meta.get('width', 0) >= 400 and meta.get('height', 0) >= 400:
+                    score += 1.0
+                # Reward keyword matches
+                if meta.get('has_product_keywords'):
+                    score += 1.0
+                # Penalize extreme aspect ratios
+                aspect = meta.get('aspect_ratio', 1)
+                if aspect < 0.6 or aspect > 1.8:
+                    score -= 1.0
+                return score
 
-Analyze the metadata for each image:
-- priority: higher is better (considers source, domain, alt text)
-- width/height: prefer larger images (800x800+)
-- source: og_image, twitter_image, json_ld are most reliable
-- has_product_keywords: true if URL contains product name
-- size_kb: reasonable file size (not too small = icon, not too large = slow)
-
-Prioritize in this order:
-1. Official retailer sites (Amazon, Best Buy, Walmart, Target) with high resolution
-2. Meta tag images (og:image, twitter:image, JSON-LD) - these are curated by the website
-3. Images with product keywords in URL or alt text
-4. Large, high-quality images (800x800 or larger)
-5. Reasonable aspect ratio (square or landscape, not banner-shaped)
-
-Do not include any <think> tags or explanation."""),
-                ("user", "Product: {product_name}\n\nValidated Images with Metadata:\n{validated_images}\n\nSelect the single best product image URL based on metadata analysis.")
-            ])
-            chain = prompt | self.llm | StrOutputParser()
-            response_text = chain.invoke({
-                "product_name": product_name,
-                "validated_images": json.dumps(validated_images, indent=2)
-            })
-            result = parse_json_output(response_text)
-            
-            # Return single image URL
-            if isinstance(result, dict) and 'image_url' in result:
-                return result['image_url']
-            
-            # Fallback: return highest priority validated image
-            validated_images.sort(key=lambda x: x.get('priority', 0), reverse=True)
+            validated_images.sort(key=score_image, reverse=True)
             return validated_images[0]['url'] if validated_images else ""
             
         except Exception as e:

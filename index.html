@@ -214,6 +214,8 @@
         let timerInterval = null;
         let startTime = 0;
 
+        const PLACEHOLDER_IMAGE = 'https://placehold.co/800x600?text=No+Image';
+
         const carousel = document.getElementById('products-carousel');
         const drawer = document.getElementById('product-drawer');
         const backdrop = document.getElementById('product-drawer-backdrop');
@@ -325,17 +327,6 @@
 
                 const card = `
                 <div class="min-w-[300px] md:min-w-[340px] snap-center bg-white rounded-3xl border border-gray-100 shadow-lg shadow-gray-200/50 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col overflow-hidden group h-full">
-                    
-                    <div class="h-48 bg-gray-50 relative overflow-hidden">
-                        <img src="${product.image_url || ''}" 
-                             class="w-full h-full object-contain p-6 mix-blend-multiply group-hover:scale-105 transition-transform duration-500"
-                             onerror="this.src='https://placehold.co/400x300?text=No+Image'">
-                        
-                        <div class="absolute top-4 right-4 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-bold shadow-sm border border-gray-100">
-                            ${bestPrice}
-                        </div>
-                    </div>
-
                     <div class="p-6 flex flex-col flex-grow">
                         <div class="flex items-center gap-2 mb-3">
                             <div class="flex text-brand-orange text-sm">
@@ -393,9 +384,6 @@
             }
 
             content.innerHTML = `
-                <div class="w-full h-48 bg-white rounded-xl border border-gray-100 flex items-center justify-center p-4 mb-6">
-                     <img src="${product.image_url}" class="h-full object-contain">
-                </div>
                 <div class="flex items-center justify-between mb-6">
                     <div>
                         <span class="block text-sm text-gray-500">Best Price</span>

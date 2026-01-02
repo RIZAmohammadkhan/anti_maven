@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Union, Any
 
 class RetailerPrice(BaseModel):
@@ -10,17 +10,17 @@ class RetailerPrice(BaseModel):
 class Product(BaseModel):
     name: str
     price: Union[str, float, int]
-    rating: Union[float, str, None] = None
-    reviews_count: Union[int, str, None] = None
-    features: Union[List[str], Any] = []
-    pros: List[str] = []
-    cons: List[str] = []
+    rating: Optional[float] = None
+    reviews_count: Optional[int] = None
+    features: Union[List[str], Any] = Field(default_factory=list)
+    pros: List[str] = Field(default_factory=list)
+    cons: List[str] = Field(default_factory=list)
     url: Optional[str] = ""
     image_url: Optional[str] = None
-    image_urls: List[str] = []  # Multiple product images
+    image_data: Optional[str] = None
     why_to_buy: Optional[str] = None
-    price_comparison: List[RetailerPrice] = []  # Prices from different retailers
-    cheapest_link: Optional[str] = None  # Direct link to cheapest option
+    price_comparison: List[RetailerPrice] = Field(default_factory=list)
+    cheapest_link: Optional[str] = None
 
 class ResearchRequest(BaseModel):
     query: str
