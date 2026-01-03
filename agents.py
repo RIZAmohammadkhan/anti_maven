@@ -1,5 +1,6 @@
 import os
 import base64
+from typing import Any
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
@@ -48,6 +49,107 @@ class ManagerAgent:
         ])
         chain = prompt | self.llm
         return chain.invoke({"query": query}).content
+
+
+def _default_personalization_questions(query: str) -> list[dict[str, Any]]:
+    # Keep IDs stable so the frontend can map answers consistently.
+    return [
+        {
+            "id": "budget",
+            "question": "What is your budget range (or max price)?",
+            "type": "text",
+            "options": [],
+        },
+        {
+            "id": "use_case",
+            "question": "What will you use it for most? (e.g., travel, gaming, office, gifting)",
+            "type": "text",
+            "options": [],
+        },
+        {
+            "id": "must_have",
+            "question": "List 2–3 must-have features.",
+            "type": "text",
+            "options": [],
+        },
+        {
+            "id": "nice_to_have",
+            "question": "Any nice-to-have features (optional)?",
+            "type": "text",
+            "options": [],
+        },
+        {
+            "id": "avoid",
+            "question": "Anything to avoid? (brands, materials, subscription, size, noise, etc.)",
+            "type": "text",
+            "options": [],
+        },
+    ]
+
+
+def _normalize_questions(raw: Any, query: str) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        return _default_personalization_questions(query)
+
+    normalized: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        qid = str(item.get("id", "")).strip()
+        question = str(item.get("question", "")).strip()
+        qtype = str(item.get("type", "text")).strip() or "text"
+        options = item.get("options", [])
+
+        if not qid or not question:
+            continue
+        if qid in seen_ids:
+            continue
+        if qtype not in {"text", "select"}:
+            qtype = "text"
+        if not isinstance(options, list) or qtype != "select":
+            options = []
+        else:
+            options = [str(o) for o in options if isinstance(o, (str, int, float))]
+            options = options[:8]
+
+        normalized.append({"id": qid, "question": question, "type": qtype, "options": options})
+        seen_ids.add(qid)
+        if len(normalized) >= 6:
+            break
+
+    return normalized or _default_personalization_questions(query)
+
+
+class PersonalizationAgent:
+    """Generate a few clarifying questions to personalize product research."""
+
+    def __init__(self):
+        self.llm = gemini_llm
+
+    def generate_questions(self, query: str) -> list[dict[str, Any]]:
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    """You generate short clarifying questions for shopping research.
+Return ONLY a JSON array of 4-6 objects with keys:
+- id (stable snake_case)
+- question (string)
+- type (text|select)
+- options (array, only if type=select)
+No <think> tags. No commentary.""",
+                ),
+                (
+                    "user",
+                    "User query: {query}\n\nGenerate the best 4-6 questions to personalize results for this query.",
+                ),
+            ]
+        )
+        chain = prompt | self.llm | StrOutputParser()
+        response_text = chain.invoke({"query": query})
+        raw = parse_json_output(response_text)
+        return _normalize_questions(raw, query)
 
 class PrimaryResearcherAgent:
     def __init__(self):

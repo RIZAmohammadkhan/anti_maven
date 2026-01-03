@@ -24,6 +24,34 @@ class Product(BaseModel):
 
 class ResearchRequest(BaseModel):
     query: str
+    session_id: Optional[str] = None
+    preferences: Optional[dict[str, Union[str, List[str]]]] = None
+
+
+class PersonalizationQuestion(BaseModel):
+    id: str
+    question: str
+    type: str = Field(default="text", description="UI hint: text|select")
+    options: List[str] = Field(default_factory=list)
+
+
+class PersonalizationInitRequest(BaseModel):
+    query: str
+
+
+class PersonalizationInitResponse(BaseModel):
+    session_id: str
+    query: str
+    questions: List[PersonalizationQuestion]
+
+
+class PersonalizationAnswersRequest(BaseModel):
+    session_id: str
+    answers: dict[str, Union[str, List[str]]]
+
+
+class PersonalizationAnswersResponse(BaseModel):
+    ok: bool = True
 
 class ResearchResponse(BaseModel):
     products: List[Product]

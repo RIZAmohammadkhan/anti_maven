@@ -4,12 +4,24 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from agent_graph import app as graph_app, set_progress_callback, clear_progress_callback
-from models import ResearchRequest, ResearchResponse
+from models import (
+    ResearchRequest,
+    ResearchResponse,
+    PersonalizationInitRequest,
+    PersonalizationInitResponse,
+    PersonalizationAnswersRequest,
+    PersonalizationAnswersResponse,
+)
 import os
 import json
 import asyncio
 import httpx
 from typing import Callable, Optional
+from collections import OrderedDict
+import uuid
+import time
+
+from agents import PersonalizationAgent
 
 app = FastAPI()
 
@@ -38,11 +50,112 @@ def execute_research(query: str, progress_callback: Optional[Callable] = None):
     
     return result
 
+
+# --- Personalization session store (in-memory) ---
+# Shape: {session_id: {"query": str, "questions": list[dict], "answers": dict, "created_at": float}}
+_PERSONALIZATION_SESSIONS: "OrderedDict[str, dict]" = OrderedDict()
+_MAX_SESSIONS = 200
+
+
+def _session_put(session_id: str, payload: dict) -> None:
+    if session_id in _PERSONALIZATION_SESSIONS:
+        _PERSONALIZATION_SESSIONS.pop(session_id, None)
+    _PERSONALIZATION_SESSIONS[session_id] = payload
+    while len(_PERSONALIZATION_SESSIONS) > _MAX_SESSIONS:
+        _PERSONALIZATION_SESSIONS.popitem(last=False)
+
+
+def _session_get(session_id: str) -> Optional[dict]:
+    payload = _PERSONALIZATION_SESSIONS.get(session_id)
+    if not payload:
+        return None
+    # Touch to keep it recent
+    _PERSONALIZATION_SESSIONS.pop(session_id, None)
+    _PERSONALIZATION_SESSIONS[session_id] = payload
+    return payload
+
+
+def _build_personalized_query(query: str, answers: Optional[dict]) -> str:
+    if not answers:
+        return query
+    lines = []
+    for key, val in answers.items():
+        if val is None:
+            continue
+        if isinstance(val, list):
+            val_str = ", ".join([str(v) for v in val if v is not None and str(v).strip()])
+        else:
+            val_str = str(val)
+        val_str = val_str.strip()
+        if not val_str:
+            continue
+        lines.append(f"- {key}: {val_str}")
+    if not lines:
+        return query
+    return (
+        f"User request: {query}\n\n"
+        f"Personalization (use these preferences to tailor recommendations):\n"
+        + "\n".join(lines)
+    )
+
+
+personalization_agent = PersonalizationAgent()
+
+
+@app.post("/api/personalization/init", response_model=PersonalizationInitResponse)
+async def personalization_init(request: PersonalizationInitRequest):
+    query = (request.query or "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Query is required")
+
+    try:
+        questions = personalization_agent.generate_questions(query)
+    except Exception as e:
+        # Hard fallback; still allow flow to proceed.
+        print(f"Error generating personalization questions: {e}")
+        questions = []
+
+    session_id = uuid.uuid4().hex
+    _session_put(
+        session_id,
+        {
+            "query": query,
+            "questions": questions,
+            "answers": {},
+            "created_at": time.time(),
+        },
+    )
+
+    return {"session_id": session_id, "query": query, "questions": questions}
+
+
+@app.post("/api/personalization/answers", response_model=PersonalizationAnswersResponse)
+async def personalization_answers(request: PersonalizationAnswersRequest):
+    session = _session_get(request.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Unknown session_id")
+
+    answers = request.answers or {}
+    if not isinstance(answers, dict):
+        raise HTTPException(status_code=400, detail="answers must be an object")
+
+    session["answers"] = answers
+    _session_put(request.session_id, session)
+    return {"ok": True}
+
 @app.post("/api/research", response_model=ResearchResponse)
 async def research(request: ResearchRequest):
     try:
-        print(f"Received research request: {request.query}")
-        result = execute_research(request.query)
+        query = (request.query or "").strip()
+        if request.session_id:
+            session = _session_get(request.session_id)
+            if session:
+                query = _build_personalized_query(session.get("query", query), session.get("answers"))
+        elif request.preferences:
+            query = _build_personalized_query(query, request.preferences)
+
+        print(f"Received research request: {query}")
+        result = execute_research(query)
         
         final_response = result.get("final_response", {})
         if not final_response:
@@ -84,10 +197,22 @@ async def proxy_image(url: str):
     )
 
 @app.get("/api/research/stream")
-async def research_stream(query: str):
+async def research_stream(query: Optional[str] = None, session_id: Optional[str] = None):
     """Stream research progress using Server-Sent Events"""
     async def event_generator():
         try:
+            resolved_query = (query or "").strip()
+            if session_id:
+                session = _session_get(session_id)
+                if not session:
+                    yield f"data: {json.dumps({'type': 'error', 'message': 'Unknown session_id'})}\n\n"
+                    return
+                resolved_query = _build_personalized_query(session.get("query", resolved_query), session.get("answers"))
+
+            if not resolved_query:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Query is required'})}\n\n"
+                return
+
             # Queue to collect progress messages
             message_queue = asyncio.Queue()
             loop = asyncio.get_event_loop()
@@ -105,7 +230,7 @@ async def research_stream(query: str):
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
             
             # Run research in background
-            future = executor.submit(execute_research, query, progress_callback)
+            future = executor.submit(execute_research, resolved_query, progress_callback)
             
             # Stream progress messages
             while not future.done():

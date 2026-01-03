@@ -114,6 +114,34 @@
             </form>
         </section>
 
+        <!-- PERSONALIZATION SECTION -->
+        <section id="personalization-section" class="hidden flex-col items-center justify-center min-h-[60vh] transition-all duration-700">
+            <div class="w-full max-w-2xl bg-white border border-gray-100 rounded-3xl shadow-sm p-8">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 bg-brand-soft rounded-2xl flex items-center justify-center text-brand-orange">
+                        <i class="fa-solid fa-sliders"></i>
+                    </div>
+                    <div>
+                        <h2 class="font-display text-2xl font-bold text-brand-black">Personalize your results</h2>
+                        <p class="text-gray-500 text-sm">Answer a few quick questions so Maven can tailor recommendations.</p>
+                    </div>
+                </div>
+
+                <form id="personalization-form" class="space-y-5">
+                    <div id="personalization-questions" class="space-y-4"></div>
+
+                    <div class="flex flex-col sm:flex-row gap-3 pt-2">
+                        <button type="button" id="personalization-skip" class="w-full sm:w-auto py-3 px-5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:border-brand-black hover:text-brand-black transition-colors">
+                            Skip
+                        </button>
+                        <button type="submit" id="personalization-continue" class="w-full sm:flex-1 py-3 px-5 rounded-xl bg-brand-black text-white text-sm font-medium hover:bg-brand-orange transition-colors">
+                            Start research
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
         <!-- LOADER SECTION (Real-time) -->
         <section id="loader-section" class="hidden flex-col items-center justify-center py-10 min-h-[60vh]">
             
@@ -213,6 +241,8 @@
         let eventSource = null;
         let timerInterval = null;
         let startTime = 0;
+        let personalizationSessionId = null;
+        let personalizationQuestions = [];
 
         const PLACEHOLDER_IMAGE = 'https://placehold.co/800x600?text=No+Image';
 
@@ -222,23 +252,181 @@
         const terminalLogs = document.getElementById('terminal-logs');
         const mainStatus = document.getElementById('main-status');
         const timerElement = document.getElementById('timer');
+
+        const personalizationSection = document.getElementById('personalization-section');
+        const personalizationQuestionsEl = document.getElementById('personalization-questions');
+        const personalizationForm = document.getElementById('personalization-form');
+        const personalizationSkipBtn = document.getElementById('personalization-skip');
+        const personalizationContinueBtn = document.getElementById('personalization-continue');
         
         // --- Search Logic ---
         document.getElementById('search-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const query = document.getElementById('query-input').value;
-            
+            await beginPersonalizationFlow(query);
+        });
+
+        personalizationSkipBtn.addEventListener('click', async () => {
+            if (!personalizationSessionId) {
+                resetSearch();
+                return;
+            }
+            startResearchStream({ sessionId: personalizationSessionId });
+        });
+
+        personalizationForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!personalizationSessionId) {
+                resetSearch();
+                return;
+            }
+
+            const answers = collectPersonalizationAnswers();
+
+            try {
+                personalizationContinueBtn.disabled = true;
+                personalizationContinueBtn.innerText = 'Saving...';
+
+                const resp = await fetch('/api/personalization/answers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: personalizationSessionId, answers }),
+                });
+
+                if (!resp.ok) {
+                    const errText = await resp.text();
+                    throw new Error(errText || 'Failed to save answers');
+                }
+
+                startResearchStream({ sessionId: personalizationSessionId });
+            } catch (err) {
+                console.error(err);
+                alert('Error saving answers. Starting research anyway.');
+                startResearchStream({ sessionId: personalizationSessionId });
+            } finally {
+                personalizationContinueBtn.disabled = false;
+                personalizationContinueBtn.innerText = 'Start research';
+            }
+        });
+
+        async function beginPersonalizationFlow(query) {
+            const cleaned = (query || '').trim();
+            if (!cleaned) return;
+
+            // Swap to personalization section
+            document.getElementById('search-section').classList.add('hidden');
+            personalizationSection.classList.remove('hidden');
+            personalizationSection.classList.add('flex');
+            personalizationQuestionsEl.innerHTML = '';
+
+            personalizationSessionId = null;
+            personalizationQuestions = [];
+
+            try {
+                personalizationContinueBtn.disabled = true;
+                personalizationContinueBtn.innerText = 'Loading...';
+
+                const resp = await fetch('/api/personalization/init', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: cleaned }),
+                });
+                if (!resp.ok) {
+                    const errText = await resp.text();
+                    throw new Error(errText || 'Failed to initialize personalization');
+                }
+                const data = await resp.json();
+                personalizationSessionId = data.session_id;
+                personalizationQuestions = Array.isArray(data.questions) ? data.questions : [];
+
+                renderPersonalizationQuestions(personalizationQuestions);
+
+                // If the backend returns no questions, just start immediately using the session_id.
+                if (!personalizationQuestions.length) {
+                    startResearchStream({ sessionId: personalizationSessionId });
+                }
+            } catch (err) {
+                console.error(err);
+                // Hard fallback: if personalization init fails, run research without personalization.
+                startResearchStream({ query: cleaned });
+            } finally {
+                personalizationContinueBtn.disabled = false;
+                personalizationContinueBtn.innerText = 'Start research';
+            }
+        }
+
+        function renderPersonalizationQuestions(questions) {
+            personalizationQuestionsEl.innerHTML = '';
+            (questions || []).forEach((q) => {
+                const qid = (q && q.id) ? String(q.id) : '';
+                const label = (q && q.question) ? String(q.question) : '';
+                const type = (q && q.type) ? String(q.type) : 'text';
+                const options = Array.isArray(q && q.options) ? q.options : [];
+                if (!qid || !label) return;
+
+                const fieldId = `pref_${qid}`;
+
+                let inputHtml = '';
+                if (type === 'select' && options.length) {
+                    const opts = options.map(o => `<option value="${escapeHtml(String(o))}">${escapeHtml(String(o))}</option>`).join('');
+                        inputHtml = `
+                            <div class="relative">
+                                <select id="${fieldId}" name="${qid}" class="w-full py-3 px-4 pr-10 bg-white border border-gray-200 rounded-xl text-brand-black focus:outline-none focus:ring-4 focus:ring-brand-orange/10 focus:border-brand-orange transition-all appearance-none">
+                                    <option value="">Select…</option>
+                                    ${opts}
+                                </select>
+                                <div class="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                                    <i class="fa-solid fa-chevron-down text-gray-400"></i>
+                                </div>
+                            </div>
+                        `;
+                } else {
+                    inputHtml = `
+                        <input id="${fieldId}" name="${qid}" type="text" class="w-full py-3 px-4 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-orange/10 focus:border-brand-orange transition-all" placeholder="Type your answer…">
+                    `;
+                }
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'space-y-2';
+                wrapper.innerHTML = `
+                    <label for="${fieldId}" class="block text-sm font-medium text-gray-700">${escapeHtml(label)}</label>
+                    ${inputHtml}
+                `;
+                personalizationQuestionsEl.appendChild(wrapper);
+            });
+        }
+
+        function collectPersonalizationAnswers() {
+            const answers = {};
+            (personalizationQuestions || []).forEach((q) => {
+                const qid = (q && q.id) ? String(q.id) : '';
+                if (!qid) return;
+                const el = document.querySelector(`[name="${CSS.escape(qid)}"]`);
+                if (!el) return;
+                const val = (el.value || '').trim();
+                if (!val) return;
+                answers[qid] = val;
+            });
+            return answers;
+        }
+
+        function startResearchStream({ query = null, sessionId = null }) {
+            // Hide personalization UI and show loader
+            personalizationSection.classList.add('hidden');
+            personalizationSection.classList.remove('flex');
             startSearchUI();
-            
-            // Connect to Server-Sent Events (SSE)
+
             if (eventSource) eventSource.close();
-            
-            // Using the GET endpoint for streaming
-            eventSource = new EventSource(`/api/research/stream?query=${encodeURIComponent(query)}`);
+
+            const params = new URLSearchParams();
+            if (sessionId) params.set('session_id', sessionId);
+            if (query && !sessionId) params.set('query', query);
+
+            eventSource = new EventSource(`/api/research/stream?${params.toString()}`);
 
             eventSource.onmessage = (event) => {
                 const data = JSON.parse(event.data);
-                
+
                 if (data.type === 'progress') {
                     addLog(data.message);
                 } else if (data.type === 'complete') {
@@ -258,7 +446,16 @@
                 console.error("EventSource failed:", err);
                 eventSource.close();
             };
-        });
+        }
+
+        function escapeHtml(str) {
+            return String(str)
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#039;');
+        }
 
         // --- UI Logic: Timer & Logs ---
         function startSearchUI() {
@@ -460,6 +657,11 @@
             document.getElementById('results-section').classList.add('hidden');
             document.getElementById('results-section').classList.add('opacity-0');
             document.getElementById('search-form').reset();
+            personalizationSessionId = null;
+            personalizationQuestions = [];
+            personalizationQuestionsEl.innerHTML = '';
+            personalizationSection.classList.add('hidden');
+            personalizationSection.classList.remove('flex');
             document.getElementById('search-section').classList.remove('hidden');
         }
 
