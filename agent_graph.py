@@ -3,7 +3,6 @@ from agents import (
     PrimaryResearcherAgent,
     ProductSpecialistAgent,
     ScraperFormatterAgent,
-    ImageSearchAgent,
     PriceComparisonAgent,
 )
 
@@ -32,9 +31,6 @@ def emit_progress(message: str):
         except Exception as e:
             print(f"Error in progress callback: {e}")
 
-PLACEHOLDER_IMAGE = "https://placehold.co/800x600?text=No+Image"
-
-
 class ShoppingState(TypedDict):
     query: str
     product_candidates: List[dict]
@@ -46,7 +42,6 @@ class ShoppingState(TypedDict):
 primary_researcher = PrimaryResearcherAgent()
 product_specialist = ProductSpecialistAgent()
 scraper_formatter = ScraperFormatterAgent()
-image_search_agent = ImageSearchAgent()
 price_comparison_agent = PriceComparisonAgent()
 
 # Tunable limits to reduce external calls
@@ -80,8 +75,6 @@ def normalize_product_data(report, candidate):
                 report['price'] = price['starting']
             elif 'msrp' in price:
                 report['price'] = price['msrp']
-            elif 'best_buy' in price:
-                report['price'] = price['best_buy']
             else:
                 # Get first numeric value
                 for key, val in price.items():

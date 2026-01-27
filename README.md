@@ -12,8 +12,8 @@ An intelligent shopping assistant powered by LangGraph and multiple AI agents th
 
 - 🤖 **Multi-Agent System** - Coordinated AI agents working together using LangGraph
 - 🔍 **Deep Product Research** - Searches the web using Tavily API for comprehensive product data
-- 💰 **Price Comparison** - Finds best prices across Amazon, Walmart, Best Buy, Target, eBay
-- 🖼️ **Smart Image Search** - Retrieves accurate product images from official sources
+- 💰 **Price Comparison** - Finds best prices across multiple retailers (domain-agnostic)
+- 🖼️ **Images (optional)** - Image lookup is currently disabled in the pipeline
 - ⭐ **Verified Ratings** - Extracts and validates product ratings (1.0-5.0)
 - 📊 **Detailed Analysis** - Provides pros, cons, features, and buying recommendations
 - 🎨 **Beautiful UI** - Modern, responsive interface with real-time updates
@@ -35,11 +35,6 @@ Maven uses a **LangGraph-based multi-agent workflow**:
            ▼
 ┌──────────────────────┐
 │ Product Specialist   │ ─── Deep analysis of specs, reviews, ratings
-└──────────┬───────────┘
-           │
-           ▼
-┌──────────────────────┐
-│   Image Search       │ ─── Finds official product images
 └──────────┬───────────┘
            │
            ▼
@@ -190,10 +185,7 @@ anti_maven/
 - **Ensures every product has 1.0-5.0 rating**
 
 ### 4. Image Search Agent
-- Uses DuckDuckGo image search
-- Finds official product images
-- **Returns single best image URL per product**
-- Prioritizes manufacturer and retailer images
+Removed (image lookup is currently disabled in the pipeline).
 
 ### 5. Price Comparison Agent
 - Searches multiple retailers
