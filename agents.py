@@ -1,6 +1,5 @@
 import os
 from typing import Any
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_tavily import TavilySearch
@@ -23,11 +22,44 @@ def parse_json_output(text):
 
 load_dotenv()
 
-# Initialize LLMs
-# Using Gemini for the Manager and Formatting (High reasoning)
-gemini_llm = ChatGoogleGenerativeAI(model="gemini-flash-lite-latest", google_api_key=os.getenv("GOOGLE_API_KEY"))
+def _get_required_env(name: str, provider: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise ValueError(f"{name} is required when LLM_PROVIDER={provider}")
+    return value
 
-# Using Groq for fast, parallel research tasks
+
+def _create_llm():
+    provider = os.getenv("LLM_PROVIDER", "").strip().lower()
+    if provider not in {"gemini", "groq"}:
+        raise ValueError("LLM_PROVIDER must be set to either 'gemini' or 'groq'")
+
+    if provider == "gemini":
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+        except ImportError as exc:
+            raise ImportError(
+                "Gemini provider selected but dependency is missing. Install `langchain-google-genai`."
+            ) from exc
+
+        gemini_api_key = _get_required_env("GEMINI_API_KEY", provider)
+        gemini_model = _get_required_env("GEMINI_MODEL", provider)
+        return ChatGoogleGenerativeAI(model=gemini_model, google_api_key=gemini_api_key)
+
+    try:
+        from langchain_groq import ChatGroq
+    except ImportError as exc:
+        raise ImportError(
+            "Groq provider selected but dependency is missing. Install `langchain-groq`."
+        ) from exc
+
+    groq_api_key = _get_required_env("GROQ_API_KEY", provider)
+    groq_model = _get_required_env("GROQ_MODEL", provider)
+    return ChatGroq(model=groq_model, groq_api_key=groq_api_key)
+
+
+default_llm = _create_llm()
+
 # Tools
 tavily_tool = TavilySearch(max_results=3)
 
@@ -106,7 +138,7 @@ class PersonalizationAgent:
     """Generate a few clarifying questions to personalize product research."""
 
     def __init__(self):
-        self.llm = gemini_llm
+        self.llm = default_llm
 
     def generate_questions(self, query: str) -> list[dict[str, Any]]:
         prompt = ChatPromptTemplate.from_messages(
@@ -134,7 +166,7 @@ No <think> tags. No commentary.""",
 
 class PrimaryResearcherAgent:
     def __init__(self):
-        self.llm = gemini_llm
+        self.llm = default_llm
         self.tool = tavily_tool
 
     def search_products(self, query: str):
@@ -152,7 +184,7 @@ class PrimaryResearcherAgent:
 
 class ProductSpecialistAgent:
     def __init__(self):
-        self.llm = gemini_llm
+        self.llm = default_llm
         self.tool = tavily_tool
 
     def analyze_product(self, product_name: str):
@@ -173,7 +205,7 @@ Do not include any <think> tags or explanation."""),
 
 class ScraperFormatterAgent:
     def __init__(self):
-        self.llm = gemini_llm
+        self.llm = default_llm
 
     def format_results(self, products_data: list, original_query: str):
         prompt = ChatPromptTemplate.from_messages([
@@ -188,7 +220,7 @@ class ScraperFormatterAgent:
 class PriceComparisonAgent:
     """Agent specialized in finding the best prices across multiple retailers"""
     def __init__(self):
-        self.llm = gemini_llm
+        self.llm = default_llm
         self.search_tool = tavily_tool
 
     def compare_prices(self, product_name: str):
@@ -221,4 +253,3 @@ Do not include any <think> tags or explanation."""),
         except Exception as e:
             print(f"Error comparing prices for {product_name}: {e}")
             return {'price_comparison': [], 'cheapest_link': ''}
-

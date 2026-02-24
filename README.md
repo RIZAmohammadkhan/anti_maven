@@ -53,9 +53,9 @@ Maven uses a **LangGraph-based multi-agent workflow**:
 ### Prerequisites
 
 - Python 3.13+
-- Google API Key (for Gemini)
+- Gemini API Key (if using `LLM_PROVIDER=gemini`)
 - Tavily API Key (for web search)
-- Groq API Key (optional, for Groq LLM)
+- Groq API Key (if using `LLM_PROVIDER=groq`)
 
 ### Installation
 
@@ -78,11 +78,19 @@ Maven uses a **LangGraph-based multi-agent workflow**:
 
 4. **Set up environment variables**
    
-   Create a `.env` file in the project root:
+   Copy the sample env and edit values:
+   ```bash
+   cp .env.example .env
+   ```
+
+   Required `.env` fields:
    ```env
-   GOOGLE_API_KEY=your_google_api_key_here
+   LLM_PROVIDER=gemini
    TAVILY_API_KEY=your_tavily_api_key_here
-   GROQ_API_KEY=your_groq_api_key_here  # Optional
+   GEMINI_API_KEY=your_gemini_api_key_here
+   GEMINI_MODEL=gemini-2.5-flash
+   GROQ_API_KEY=your_groq_api_key_here
+   GROQ_MODEL=llama-3.3-70b-versatile
    ```
 
    Get your API keys:
@@ -202,20 +210,12 @@ Removed (image lookup is currently disabled in the pipeline).
 
 ### LLM Models
 
-Edit `agents.py` to change the LLM:
+Set provider and model through `.env` only:
 
-```python
-# Current: Gemini Flash
-gemini_llm = ChatGoogleGenerativeAI(
-    model="gemini-flash-latest",
-    google_api_key=os.getenv("GOOGLE_API_KEY")
-)
-
-# Alternative: Groq
-# llm = ChatGroq(
-#     model="mixtral-8x7b-32768",
-#     groq_api_key=os.getenv("GROQ_API_KEY")
-# )
+```env
+LLM_PROVIDER=gemini  # gemini or groq
+GEMINI_MODEL=gemini-2.5-flash
+GROQ_MODEL=llama-3.3-70b-versatile
 ```
 
 ### Search Tools
@@ -277,9 +277,12 @@ This will:
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `GOOGLE_API_KEY` | Google Gemini API key | Yes |
+| `LLM_PROVIDER` | Active LLM provider (`gemini` or `groq`) | Yes |
 | `TAVILY_API_KEY` | Tavily search API key | Yes |
-| `GROQ_API_KEY` | Groq LLM API key | Optional |
+| `GEMINI_API_KEY` | Gemini API key | Yes (if `LLM_PROVIDER=gemini`) |
+| `GEMINI_MODEL` | Gemini model id | Yes (if `LLM_PROVIDER=gemini`) |
+| `GROQ_API_KEY` | Groq API key | Yes (if `LLM_PROVIDER=groq`) |
+| `GROQ_MODEL` | Groq model id | Yes (if `LLM_PROVIDER=groq`) |
 
 ## 🚦 Rate Limits
 
@@ -298,7 +301,7 @@ python main.py
 
 ### Missing API keys
 ```
-Error: GOOGLE_API_KEY not found
+ValueError: GEMINI_API_KEY is required when LLM_PROVIDER=gemini
 ```
 → Create `.env` file with your API keys
 
