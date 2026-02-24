@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from typing import Optional, List, Union, Callable
 from agent_graph import app as graph_app, set_progress_callback, clear_progress_callback
 from models import (
@@ -96,11 +97,18 @@ def signup(req: SignupRequest, db: Session = Depends(get_db)):
         email=req.email.lower().strip(),
         hashed_password=hash_password(req.password),
     )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
+    try:
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Email already registered")
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Could not create account: {e}")
 
-    token = create_access_token({"sub": user.id})
+    token = create_access_token({"sub": str(user.id)})
     return {
         "token": token,
         "user": {"id": user.id, "name": user.name, "email": user.email},
@@ -109,11 +117,15 @@ def signup(req: SignupRequest, db: Session = Depends(get_db)):
 
 @app.post("/api/auth/login", response_model=AuthResponse)
 def login(req: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == req.email.lower().strip()).first()
+    try:
+        user = db.query(User).filter(User.email == req.email.lower().strip()).first()
+    except Exception:
+        raise HTTPException(status_code=500, detail="Database error")
+
     if not user or not verify_password(req.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    token = create_access_token({"sub": user.id})
+    token = create_access_token({"sub": str(user.id)})
     return {
         "token": token,
         "user": {"id": user.id, "name": user.name, "email": user.email},

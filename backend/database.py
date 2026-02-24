@@ -3,8 +3,12 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
 import os
+from pathlib import Path
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./maven.db")
+# Use absolute path so the DB location is independent of the working directory
+_BASE_DIR = Path(__file__).resolve().parent
+_DEFAULT_DB = f"sqlite:///{_BASE_DIR / 'maven.db'}"
+DATABASE_URL = os.getenv("DATABASE_URL", _DEFAULT_DB)
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
