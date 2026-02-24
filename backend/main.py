@@ -1,8 +1,9 @@
-from fastapi import FastAPI, HTTPException, Response
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException, Response, Depends, status
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+from typing import Optional, List, Union, Callable
 from agent_graph import app as graph_app, set_progress_callback, clear_progress_callback
 from models import (
     ResearchRequest,
@@ -12,47 +13,169 @@ from models import (
     PersonalizationAnswersRequest,
     PersonalizationAnswersResponse,
 )
+from database import create_tables, get_db, User, SearchHistory
+from auth import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    get_current_user,
+)
 import os
 import json
 import asyncio
 import httpx
-from typing import Callable, Optional
 from collections import OrderedDict
 import uuid
 import time
 
 from agents import PersonalizationAgent
 
-app = FastAPI()
+# ---------------------------------------------------------------------------
+# App setup
+# ---------------------------------------------------------------------------
+app = FastAPI(title="Maven API", version="2.0.0")
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
+@app.on_event("startup")
+def on_startup():
+    create_tables()
+
+
+# ---------------------------------------------------------------------------
+# Auth schemas
+# ---------------------------------------------------------------------------
+class SignupRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    email: str = Field(..., min_length=3, max_length=255)
+    password: str = Field(..., min_length=6, max_length=128)
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class AuthResponse(BaseModel):
+    token: str
+    user: dict
+
+
+class UserOut(BaseModel):
+    id: int
+    name: str
+    email: str
+
+
+class SearchHistoryOut(BaseModel):
+    id: int
+    query: str
+    products: Optional[list] = None
+    recommendation: Optional[str] = None
+    created_at: str
+
+
+# ---------------------------------------------------------------------------
+# Auth endpoints
+# ---------------------------------------------------------------------------
+@app.post("/api/auth/signup", response_model=AuthResponse)
+def signup(req: SignupRequest, db: Session = Depends(get_db)):
+    existing = db.query(User).filter(User.email == req.email.lower().strip()).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    user = User(
+        name=req.name.strip(),
+        email=req.email.lower().strip(),
+        hashed_password=hash_password(req.password),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    token = create_access_token({"sub": user.id})
+    return {
+        "token": token,
+        "user": {"id": user.id, "name": user.name, "email": user.email},
+    }
+
+
+@app.post("/api/auth/login", response_model=AuthResponse)
+def login(req: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == req.email.lower().strip()).first()
+    if not user or not verify_password(req.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    token = create_access_token({"sub": user.id})
+    return {
+        "token": token,
+        "user": {"id": user.id, "name": user.name, "email": user.email},
+    }
+
+
+@app.get("/api/auth/me", response_model=UserOut)
+def me(current_user: User = Depends(get_current_user)):
+    return {"id": current_user.id, "name": current_user.name, "email": current_user.email}
+
+
+# ---------------------------------------------------------------------------
+# Search history endpoints
+# ---------------------------------------------------------------------------
+@app.get("/api/history", response_model=List[SearchHistoryOut])
+def get_history(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    items = (
+        db.query(SearchHistory)
+        .filter(SearchHistory.user_id == current_user.id)
+        .order_by(SearchHistory.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    return [
+        {
+            "id": h.id,
+            "query": h.query,
+            "products": h.products,
+            "recommendation": h.recommendation,
+            "created_at": h.created_at.isoformat() if h.created_at else "",
+        }
+        for h in items
+    ]
+
+
+@app.delete("/api/history/{history_id}")
+def delete_history_item(history_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    item = db.query(SearchHistory).filter(
+        SearchHistory.id == history_id, SearchHistory.user_id == current_user.id
+    ).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Not found")
+    db.delete(item)
+    db.commit()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Research helpers (unchanged logic)
+# ---------------------------------------------------------------------------
 def execute_research(query: str, progress_callback: Optional[Callable] = None):
-    """Execute research with optional progress callback"""
     initial_state = {"query": query, "product_candidates": [], "detailed_reports": [], "final_response": {}}
-    
-    # Set callback for nodes to access
     if progress_callback:
         set_progress_callback(progress_callback)
-    
     try:
         result = graph_app.invoke(initial_state)
     finally:
-        # Clean up callback
         clear_progress_callback()
-    
     return result
 
 
 # --- Personalization session store (in-memory) ---
-# Shape: {session_id: {"query": str, "questions": list[dict], "answers": dict, "created_at": float}}
 _PERSONALIZATION_SESSIONS: "OrderedDict[str, dict]" = OrderedDict()
 _MAX_SESSIONS = 200
 
@@ -69,7 +192,6 @@ def _session_get(session_id: str) -> Optional[dict]:
     payload = _PERSONALIZATION_SESSIONS.get(session_id)
     if not payload:
         return None
-    # Touch to keep it recent
     _PERSONALIZATION_SESSIONS.pop(session_id, None)
     _PERSONALIZATION_SESSIONS[session_id] = payload
     return payload
@@ -102,6 +224,9 @@ def _build_personalized_query(query: str, answers: Optional[dict]) -> str:
 personalization_agent = PersonalizationAgent()
 
 
+# ---------------------------------------------------------------------------
+# Personalization endpoints
+# ---------------------------------------------------------------------------
 @app.post("/api/personalization/init", response_model=PersonalizationInitResponse)
 async def personalization_init(request: PersonalizationInitRequest):
     query = (request.query or "").strip()
@@ -111,21 +236,11 @@ async def personalization_init(request: PersonalizationInitRequest):
     try:
         questions = personalization_agent.generate_questions(query)
     except Exception as e:
-        # Hard fallback; still allow flow to proceed.
         print(f"Error generating personalization questions: {e}")
         questions = []
 
     session_id = uuid.uuid4().hex
-    _session_put(
-        session_id,
-        {
-            "query": query,
-            "questions": questions,
-            "answers": {},
-            "created_at": time.time(),
-        },
-    )
-
+    _session_put(session_id, {"query": query, "questions": questions, "answers": {}, "created_at": time.time()})
     return {"session_id": session_id, "query": query, "questions": questions}
 
 
@@ -134,15 +249,17 @@ async def personalization_answers(request: PersonalizationAnswersRequest):
     session = _session_get(request.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Unknown session_id")
-
     answers = request.answers or {}
     if not isinstance(answers, dict):
         raise HTTPException(status_code=400, detail="answers must be an object")
-
     session["answers"] = answers
     _session_put(request.session_id, session)
     return {"ok": True}
 
+
+# ---------------------------------------------------------------------------
+# Research endpoint (POST)
+# ---------------------------------------------------------------------------
 @app.post("/api/research", response_model=ResearchResponse)
 async def research(request: ResearchRequest):
     try:
@@ -156,16 +273,18 @@ async def research(request: ResearchRequest):
 
         print(f"Received research request: {query}")
         result = execute_research(query)
-        
         final_response = result.get("final_response", {})
         if not final_response:
-             raise HTTPException(status_code=500, detail="Failed to generate research response")
-             
+            raise HTTPException(status_code=500, detail="Failed to generate research response")
         return final_response
     except Exception as e:
         print(f"Error processing request: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ---------------------------------------------------------------------------
+# Image proxy
+# ---------------------------------------------------------------------------
 @app.get("/api/image-proxy")
 async def proxy_image(url: str):
     if not url or not url.startswith(("http://", "https://")):
@@ -177,7 +296,6 @@ async def proxy_image(url: str):
         "Accept-Language": "en-US,en;q=0.9",
         "Referer": "https://www.google.com/",
     }
-
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
             response = await client.get(url, headers=headers)
@@ -196,79 +314,97 @@ async def proxy_image(url: str):
         headers={"Cache-Control": "public, max-age=86400"},
     )
 
+
+# ---------------------------------------------------------------------------
+# SSE stream endpoint (saves result to history when done)
+# ---------------------------------------------------------------------------
 @app.get("/api/research/stream")
-async def research_stream(query: Optional[str] = None, session_id: Optional[str] = None):
-    """Stream research progress using Server-Sent Events"""
+async def research_stream(
+    query: Optional[str] = None,
+    session_id: Optional[str] = None,
+    user_id: Optional[int] = None,
+):
+    """Stream research progress via Server-Sent Events.
+    user_id is passed as a query-param by the authenticated frontend.
+    """
+
     async def event_generator():
         try:
             resolved_query = (query or "").strip()
+            original_query = resolved_query
+
             if session_id:
                 session = _session_get(session_id)
                 if not session:
                     yield f"data: {json.dumps({'type': 'error', 'message': 'Unknown session_id'})}\n\n"
                     return
-                resolved_query = _build_personalized_query(session.get("query", resolved_query), session.get("answers"))
+                original_query = session.get("query", resolved_query)
+                resolved_query = _build_personalized_query(original_query, session.get("answers"))
 
             if not resolved_query:
                 yield f"data: {json.dumps({'type': 'error', 'message': 'Query is required'})}\n\n"
                 return
 
-            # Queue to collect progress messages
             message_queue = asyncio.Queue()
             loop = asyncio.get_event_loop()
-            
+
             def progress_callback(message: str):
-                """Callback to send progress updates - thread-safe"""
                 try:
-                    # Use call_soon_threadsafe to safely add to queue from another thread
                     loop.call_soon_threadsafe(message_queue.put_nowait, message)
                 except Exception as e:
                     print(f"Error in progress_callback: {e}")
-            
-            # Start research in a separate thread
+
             import concurrent.futures
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-            
-            # Run research in background
             future = executor.submit(execute_research, resolved_query, progress_callback)
-            
-            # Stream progress messages
+
             while not future.done():
                 try:
                     message = await asyncio.wait_for(message_queue.get(), timeout=0.5)
                     yield f"data: {json.dumps({'type': 'progress', 'message': message})}\n\n"
                 except asyncio.TimeoutError:
-                    # Send heartbeat
                     yield f": heartbeat\n\n"
-            
-            # Get remaining messages
+
             while not message_queue.empty():
                 try:
                     message = message_queue.get_nowait()
                     yield f"data: {json.dumps({'type': 'progress', 'message': message})}\n\n"
-                except:
+                except Exception:
                     break
-            
-            # Get result
+
             result = future.result()
             final_response = result.get("final_response", {})
-            
+
             if not final_response:
                 yield f"data: {json.dumps({'type': 'error', 'message': 'Failed to generate research response'})}\n\n"
             else:
+                # Persist to search history if user_id provided
+                if user_id:
+                    try:
+                        from database import SessionLocal
+                        db = SessionLocal()
+                        entry = SearchHistory(
+                            user_id=user_id,
+                            query=original_query,
+                            products=final_response.get("products"),
+                            recommendation=final_response.get("final_recommendation", ""),
+                        )
+                        db.add(entry)
+                        db.commit()
+                        db.close()
+                    except Exception as e:
+                        print(f"Failed to save search history: {e}")
+
                 yield f"data: {json.dumps({'type': 'complete', 'data': final_response})}\n\n"
-            
+
         except Exception as e:
             print(f"Error in stream: {e}")
             import traceback
             traceback.print_exc()
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
-    
+
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
-@app.get("/")
-async def read_index():
-    return FileResponse('index.html')
 
 if __name__ == "__main__":
     import uvicorn
