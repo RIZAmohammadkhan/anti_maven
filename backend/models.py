@@ -21,6 +21,7 @@ class Product(BaseModel):
     why_to_buy: Optional[str] = None
     price_comparison: List[RetailerPrice] = Field(default_factory=list)
     cheapest_link: Optional[str] = None
+    link_verified: Optional[bool] = False
 
 class ResearchRequest(BaseModel):
     query: str

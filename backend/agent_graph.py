@@ -4,6 +4,7 @@ from agents import (
     PrimaryResearcherAgent,
     ProductDetailAgent,
     PriceComparisonAgent,
+    LinkVerificationAgent,
     RecommendationAgent,
 )
 
@@ -50,6 +51,7 @@ class ShoppingState(TypedDict):
 primary_researcher = PrimaryResearcherAgent()
 product_detail_agent = ProductDetailAgent()
 price_comparison_agent = PriceComparisonAgent()
+link_verification_agent = LinkVerificationAgent()
 recommendation_agent = RecommendationAgent()
 
 MAX_PRODUCTS = 3
@@ -131,6 +133,10 @@ def normalize_product_data(product: dict) -> dict:
     product.pop("source_urls", None)
     product.pop("search_image", None)
 
+    # -- link_verified (from LinkVerificationAgent) --
+    if "link_verified" not in product:
+        product["link_verified"] = False
+
     return product
 
 
@@ -139,7 +145,16 @@ def normalize_product_data(product: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def run_shopping_pipeline(query: str) -> dict:
-    """Sequential multi-agent orchestration with progress hooks."""
+    """Sequential multi-agent orchestration with progress hooks.
+
+    Pipeline:
+      1. Primary Research   → top 3 product candidates (names)
+      2. Product Detail     → validate picks + gather features/pros/cons
+      3. Price Comparison   → find retailer buy pages → URL, image, price
+      4. Link Verification  → verify all buy links are real purchase pages
+      5. Normalise          → clean data for API response
+      6. Recommendation     → final LLM recommendation
+    """
 
     state: ShoppingState = {
         "query": query,
@@ -162,81 +177,94 @@ def run_shopping_pipeline(query: str) -> dict:
         f"Found {len(state['product_candidates'])} product candidates"
     )
 
-    # ── Step 2: Detail gathering (scrape + analyse) ────────────
+    # ── Step 2: Product detail (validate picks + features/pros/cons) ──
     products: list[dict] = []
     for idx, candidate in enumerate(state["product_candidates"], 1):
         name = candidate.get("name", "Unknown")
-        url = candidate.get("url", "")
         emit_progress(
-            f"Researching {name} ({idx}/{len(state['product_candidates'])}) ..."
+            f"Validating & researching {name} ({idx}/{len(state['product_candidates'])}) ..."
         )
         try:
-            product = product_detail_agent.gather_details(name, url)
+            details = product_detail_agent.gather_details(name)
 
-            # Carry forward any search_image from primary step
-            if not product.get("image_url") and candidate.get("search_image"):
-                product["image_url"] = candidate["search_image"]
+            if not details.get("is_valid_product", True):
+                emit_progress(f"Skipped {name} — does not appear to be a valid product")
+                continue
 
+            # Build product dict: details only, no URLs/images yet
+            product = {
+                "name": details.get("name", name),
+                "approximate_price": details.get("approximate_price"),
+                "rating": details.get("rating", 4.0),
+                "reviews_count": details.get("reviews_count"),
+                "features": details.get("features", []),
+                "pros": details.get("pros", []),
+                "cons": details.get("cons", []),
+                "why_to_buy": details.get("why_to_buy", ""),
+            }
             products.append(product)
-            img_status = "with image" if product.get("image_url") else "no image yet"
-            emit_progress(f"Completed details for {name} ({img_status})")
+            emit_progress(f"Completed details for {name}")
         except Exception as exc:
             emit_progress(f"Error researching {name}: {exc}")
 
-    # ── Step 3: Price comparison (all products) ────────────────
-    emit_progress("Searching for best deals across retailers...")
+    # ── Step 3: Price comparison → URL, image, price from retailers ──
+    emit_progress("Searching for best deals and buy links across retailers...")
     for idx, product in enumerate(products, 1):
         name = product.get("name", "Unknown")
-        emit_progress(f"Checking prices for {name} ({idx}/{len(products)})")
+        emit_progress(f"Finding buy links & prices for {name} ({idx}/{len(products)})")
         try:
             price_data = price_comparison_agent.compare_prices(
-                name, product.get("url", "")
-            )
-            product["price_comparison"] = price_data.get("price_comparison", [])
-            product["cheapest_link"] = price_data.get(
-                "cheapest_link", product.get("url", "")
+                name, product.get("approximate_price")
             )
 
-            # Update price if we found a concrete one from comparison
+            # URL and image come from price comparison (retailer pages)
+            product["url"] = price_data.get("url", "")
+            product["image_url"] = price_data.get("image_url")
+            product["price"] = price_data.get("price", "Price not available")
+            product["price_comparison"] = price_data.get("price_comparison", [])
+            product["cheapest_link"] = price_data.get("cheapest_link", product.get("url", ""))
+
+            # Use best_price if our price is still missing
             best_price = price_data.get("best_price")
             if best_price and product.get("price") in (
-                "Price not available",
-                "Price varies",
-                None,
-                "",
+                "Price not available", "Price varies", None, "",
             ):
                 product["price"] = best_price
 
-            # Also try to extract a numeric price from the comparison results
-            if product.get("price") in (
-                "Price not available",
-                "Price varies",
-                None,
-                "",
-            ):
-                prices_found: list[float] = []
-                for rp in product.get("price_comparison", []):
-                    pv = rp.get("price", "")
-                    try:
-                        prices_found.append(
-                            float(str(pv).replace("$", "").replace(",", ""))
-                        )
-                    except (ValueError, TypeError):
-                        pass
-                if prices_found:
-                    product["price"] = f"${min(prices_found):.2f}"
-
+            img_status = "with image" if product.get("image_url") else "no image"
             emit_progress(
-                f"Best price for {name}: {product.get('price', 'N/A')}"
+                f"Best price for {name}: {product.get('price', 'N/A')} ({img_status})"
             )
         except Exception as exc:
             emit_progress(f"Error comparing prices for {name}: {exc}")
+            product.setdefault("url", "")
+            product.setdefault("image_url", None)
+            product.setdefault("price", product.get("approximate_price", "Price not available"))
+            product.setdefault("price_comparison", [])
+            product.setdefault("cheapest_link", "")
 
-    # ── Step 4: Normalise ──────────────────────────────────────
+    # Remove the internal-only approximate_price field
+    for product in products:
+        product.pop("approximate_price", None)
+
+    # ── Step 4: Link verification ──────────────────────────────
+    emit_progress("Verifying product buy links...")
+    for idx, product in enumerate(products, 1):
+        name = product.get("name", "Unknown")
+        emit_progress(f"Verifying links for {name} ({idx}/{len(products)})")
+        try:
+            product = link_verification_agent.verify_product_links(product)
+            products[idx - 1] = product
+            verified_status = "verified" if product.get("link_verified") else "could not verify"
+            emit_progress(f"Links for {name}: {verified_status}")
+        except Exception as exc:
+            emit_progress(f"Error verifying links for {name}: {exc}")
+
+    # ── Step 5: Normalise ──────────────────────────────────────
     normalized = [normalize_product_data(p) for p in products]
     state["detailed_products"] = normalized
 
-    # ── Step 5: Final recommendation ───────────────────────────
+    # ── Step 6: Final recommendation ───────────────────────────
     emit_progress("Compiling final recommendation...")
     recommendation = recommendation_agent.recommend(normalized, query)
 
