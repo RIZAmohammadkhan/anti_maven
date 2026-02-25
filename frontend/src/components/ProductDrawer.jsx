@@ -1,4 +1,28 @@
+import { useState } from 'react';
 import { generateStars, formatPrice } from '../utils';
+
+function DrawerImage({ src, alt }) {
+  const [failed, setFailed] = useState(false);
+  const proxied = src ? `/api/image-proxy?url=${encodeURIComponent(src)}` : null;
+
+  if (!proxied || failed) {
+    return (
+      <div className="w-full h-56 bg-gradient-to-br from-gray-100 to-gray-50 flex items-center justify-center rounded-xl">
+        <i className="fa-solid fa-box-open text-5xl text-gray-300"></i>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={proxied}
+      alt={alt}
+      className="w-full h-56 object-contain bg-white rounded-xl border border-gray-100 p-3"
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
+}
 
 export default function ProductDrawer({ product, onClose }) {
   if (!product) return null;
@@ -31,6 +55,9 @@ export default function ProductDrawer({ product, onClose }) {
 
         {/* Content */}
         <div className="flex-grow overflow-y-auto p-6 space-y-8">
+          {/* Product Image */}
+          <DrawerImage src={product.image_url} alt={product.name} />
+
           {/* Price & Rating */}
           <div className="flex items-center justify-between mb-6">
             <div>

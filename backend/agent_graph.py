@@ -1,251 +1,264 @@
+import re
 from typing import TypedDict, List
 from agents import (
     PrimaryResearcherAgent,
-    ProductSpecialistAgent,
-    ScraperFormatterAgent,
+    ProductDetailAgent,
     PriceComparisonAgent,
+    RecommendationAgent,
 )
 
-# Global progress callback registry
+# ---------------------------------------------------------------------------
+# Progress-callback plumbing (unchanged)
+# ---------------------------------------------------------------------------
 _progress_callback = None
 
+
 def set_progress_callback(callback):
-    """Set the global progress callback function"""
     global _progress_callback
     _progress_callback = callback
 
+
 def clear_progress_callback():
-    """Clear the global progress callback"""
     global _progress_callback
     _progress_callback = None
 
+
 def emit_progress(message: str):
-    """Emit progress message to UI if callback is available"""
     global _progress_callback
-    # Always print for console logging
     print(message)
-    # Send to UI if callback is set
     if _progress_callback:
         try:
             _progress_callback(message)
         except Exception as e:
             print(f"Error in progress callback: {e}")
 
+
+# ---------------------------------------------------------------------------
+# State type
+# ---------------------------------------------------------------------------
+
 class ShoppingState(TypedDict):
     query: str
     product_candidates: List[dict]
-    detailed_reports: List[dict]
+    detailed_products: List[dict]
     final_response: dict
 
 
-# Initialize agents (lightweight, sequential orchestration)
+# ---------------------------------------------------------------------------
+# Agent instances
+# ---------------------------------------------------------------------------
 primary_researcher = PrimaryResearcherAgent()
-product_specialist = ProductSpecialistAgent()
-scraper_formatter = ScraperFormatterAgent()
+product_detail_agent = ProductDetailAgent()
 price_comparison_agent = PriceComparisonAgent()
+recommendation_agent = RecommendationAgent()
 
-# Tunable limits to reduce external calls
 MAX_PRODUCTS = 3
-MAX_PRICE_CHECKS = 2
 
-def normalize_product_data(report, candidate):
-    """Normalize product data to match the Product model schema"""
-    # Unwrap if wrapped in 'product' key
-    if 'product' in report and isinstance(report['product'], dict):
-        report = report['product']
-    
-    # Handle 'product' field as 'name'
-    if 'product' in report and 'name' not in report:
-        report['name'] = report.pop('product')
-    
-    # Ensure name exists
-    if 'name' not in report:
-        report['name'] = candidate.get('name', 'Unknown Product')
-    
-    # Merge url/image if missing in report but present in candidate
-    if 'url' not in report or not report['url']:
-        report['url'] = candidate.get('url', '')
-    
-    # Normalize price - extract simple value from complex structures
-    if 'price' in report:
-        price = report['price']
-        if isinstance(price, dict):
-            # Try to extract a single price value
-            if 'starting' in price:
-                report['price'] = price['starting']
-            elif 'msrp' in price:
-                report['price'] = price['msrp']
-            else:
-                # Get first numeric value
-                for key, val in price.items():
-                    if isinstance(val, (int, float)):
-                        report['price'] = val
-                        break
-                else:
-                    report['price'] = "Price varies"
-        elif isinstance(price, str):
-            # Keep string as-is
-            pass
-        # Numeric values are fine
-    else:
-        report['price'] = "Price not available"
-    
-    # Normalize rating - extract simple value from complex structures and ensure it's valid
-    if 'rating' in report:
-        rating = report['rating']
-        if isinstance(rating, dict):
-            # Try to extract a single rating value
-            if 'score' in rating:
-                report['rating'] = float(rating['score'])
-            else:
-                # Get first numeric value
-                for key, val in rating.items():
-                    if isinstance(val, (int, float)):
-                        report['rating'] = float(val)
-                        break
-                else:
-                    report['rating'] = 4.0  # Default to reasonable rating
-        elif isinstance(rating, str):
-            try:
-                # Try to extract number from string like "4.5/5" or "4.5 stars"
-                import re
-                match = re.search(r'(\d+\.?\d*)', rating)
-                if match:
-                    report['rating'] = float(match.group(1))
-                else:
-                    report['rating'] = 4.0
-            except:
-                report['rating'] = 4.0
-        elif isinstance(rating, (int, float)):
-            report['rating'] = float(rating)
-        elif rating is None:
-            report['rating'] = 4.0  # Default rating if None
-        # Ensure rating is between 1.0 and 5.0
-        if isinstance(report['rating'], (int, float)):
-            report['rating'] = max(1.0, min(5.0, float(report['rating'])))
-    else:
-        report['rating'] = 4.0  # Default rating if missing
-    
-    # Normalize features - convert dict to list
-    if 'features' in report:
-        features = report['features']
-        if isinstance(features, dict):
-            report['features'] = [f"{k}: {v}" for k, v in features.items()]
-        elif not isinstance(features, list):
-            report['features'] = []
-    else:
-        report['features'] = []
-    
-    # Ensure pros and cons are lists
-    if 'pros' not in report or not isinstance(report['pros'], list):
-        report['pros'] = []
-    if 'cons' not in report or not isinstance(report['cons'], list):
-        report['cons'] = []
-    
-    # Ensure reviews_count is valid
-    if 'reviews_count' in report:
-        reviews = report['reviews_count']
-        if isinstance(reviews, dict):
-            report['reviews_count'] = None
-        elif isinstance(reviews, str):
-            try:
-                import re
-                match = re.search(r"\d+", reviews.replace(',', ''))
-                report['reviews_count'] = int(match.group()) if match else None
-            except Exception:
-                report['reviews_count'] = None
-    
-    return report
+
+# ---------------------------------------------------------------------------
+# Normalisation
+# ---------------------------------------------------------------------------
+
+def normalize_product_data(product: dict) -> dict:
+    """Ensure product data matches the Product Pydantic model."""
+
+    # -- name --
+    if not product.get("name"):
+        product["name"] = "Unknown Product"
+
+    # -- price --
+    price = product.get("price")
+    if isinstance(price, dict):
+        for key in ("starting", "msrp", "price", "lowPrice"):
+            if key in price:
+                product["price"] = price[key]
+                break
+        else:
+            vals = [v for v in price.values() if isinstance(v, (int, float))]
+            product["price"] = vals[0] if vals else "Price varies"
+    elif price is None or price == "":
+        product["price"] = "Price not available"
+
+    # -- rating (float 1.0-5.0) --
+    rating = product.get("rating", 4.0)
+    if isinstance(rating, dict):
+        rating = rating.get("score", rating.get("value", 4.0))
+    if isinstance(rating, str):
+        m = re.search(r"(\d+\.?\d*)", rating)
+        rating = float(m.group(1)) if m else 4.0
+    if rating is None:
+        rating = 4.0
+    try:
+        rating = float(rating)
+    except (ValueError, TypeError):
+        rating = 4.0
+    product["rating"] = max(1.0, min(5.0, rating))
+
+    # -- features --
+    features = product.get("features", [])
+    if isinstance(features, dict):
+        features = [f"{k}: {v}" for k, v in features.items()]
+    elif not isinstance(features, list):
+        features = []
+    product["features"] = features
+
+    # -- pros / cons --
+    for key in ("pros", "cons"):
+        val = product.get(key, [])
+        if not isinstance(val, list):
+            product[key] = []
+
+    # -- reviews_count --
+    rc = product.get("reviews_count")
+    if isinstance(rc, dict):
+        product["reviews_count"] = None
+    elif isinstance(rc, str):
+        m = re.search(r"\d+", rc.replace(",", ""))
+        product["reviews_count"] = int(m.group()) if m else None
+
+    # -- urls --
+    if not product.get("url"):
+        product["url"] = ""
+    if not product.get("cheapest_link"):
+        product["cheapest_link"] = product.get("url", "")
+
+    # -- image --
+    if not product.get("image_url"):
+        product["image_url"] = None
+    product["image_data"] = None  # legacy field, not used
+
+    # -- drop internal-only keys --
+    product.pop("source_urls", None)
+    product.pop("search_image", None)
+
+    return product
+
+
+# ---------------------------------------------------------------------------
+# Pipeline
+# ---------------------------------------------------------------------------
 
 def run_shopping_pipeline(query: str) -> dict:
-    """Sequential multi-agent orchestration with progress hooks"""
+    """Sequential multi-agent orchestration with progress hooks."""
+
     state: ShoppingState = {
         "query": query,
         "product_candidates": [],
-        "detailed_reports": [],
+        "detailed_products": [],
         "final_response": {},
     }
 
-    emit_progress(f"Analyzing query '{query[:50]}...'")
+    # ── Step 1: Primary research ───────────────────────────────
+    emit_progress(f"Analyzing query '{query[:60]}' ...")
+    emit_progress("Searching the web for top products...")
 
-    emit_progress(f"Searching the web for top products...")
     candidates = primary_researcher.search_products(query)
     if isinstance(candidates, dict) and "products" in candidates:
         candidates = candidates["products"]
-    state["product_candidates"] = (candidates or [])[:MAX_PRODUCTS] if isinstance(candidates, list) else []
-    emit_progress(f"Found {len(state['product_candidates'])} product candidates (capped at {MAX_PRODUCTS})")
+    state["product_candidates"] = (
+        (candidates or [])[:MAX_PRODUCTS] if isinstance(candidates, list) else []
+    )
+    emit_progress(
+        f"Found {len(state['product_candidates'])} product candidates"
+    )
 
-    emit_progress(f"Analyzing {len(state['product_candidates'])} products in detail...")
-    reports = []
+    # ── Step 2: Detail gathering (scrape + analyse) ────────────
+    products: list[dict] = []
     for idx, candidate in enumerate(state["product_candidates"], 1):
-        product_name = candidate.get("name", "Unknown")
+        name = candidate.get("name", "Unknown")
+        url = candidate.get("url", "")
+        emit_progress(
+            f"Researching {name} ({idx}/{len(state['product_candidates'])}) ..."
+        )
         try:
-            emit_progress(f"Analyzing {product_name} ({idx}/{len(state['product_candidates'])})")
-            report = product_specialist.analyze_product(product_name)
-            normalized_report = normalize_product_data(report, candidate)
-            reports.append(normalized_report)
-            emit_progress(f"Completed analysis for {product_name}")
+            product = product_detail_agent.gather_details(name, url)
+
+            # Carry forward any search_image from primary step
+            if not product.get("image_url") and candidate.get("search_image"):
+                product["image_url"] = candidate["search_image"]
+
+            products.append(product)
+            img_status = "with image" if product.get("image_url") else "no image yet"
+            emit_progress(f"Completed details for {name} ({img_status})")
         except Exception as exc:
-            emit_progress(f"Error analyzing {product_name}: {exc}")
-    state["detailed_reports"] = reports
-    emit_progress(f"Finished analyzing all {len(reports)} products")
+            emit_progress(f"Error researching {name}: {exc}")
 
-    emit_progress("Image lookup skipped per request; omitting images from results.")
-    for report in state["detailed_reports"]:
-        report["image_url"] = None
-        report["image_data"] = None
-
-    emit_progress("Searching for best deals across retailers (limited)...")
-    for idx, report in enumerate(state["detailed_reports"], 1):
-        product_name = report.get("name", "")
-        if idx > MAX_PRICE_CHECKS:
-            emit_progress(f"Skipping price comparison for {product_name} to reduce requests")
-            report["price_comparison"] = []
-            report["cheapest_link"] = report.get("url", "")
-            continue
-
-        emit_progress(f"Checking prices for {product_name} ({idx}/{len(state['detailed_reports'])})")
+    # ── Step 3: Price comparison (all products) ────────────────
+    emit_progress("Searching for best deals across retailers...")
+    for idx, product in enumerate(products, 1):
+        name = product.get("name", "Unknown")
+        emit_progress(f"Checking prices for {name} ({idx}/{len(products)})")
         try:
-            price_data = price_comparison_agent.compare_prices(product_name)
-            report["price_comparison"] = price_data.get("price_comparison", [])
-            report["cheapest_link"] = price_data.get("cheapest_link", "")
+            price_data = price_comparison_agent.compare_prices(
+                name, product.get("url", "")
+            )
+            product["price_comparison"] = price_data.get("price_comparison", [])
+            product["cheapest_link"] = price_data.get(
+                "cheapest_link", product.get("url", "")
+            )
 
-            prices = []
-            for retailer_price in report["price_comparison"]:
-                price_val = retailer_price.get("price", 0)
-                if isinstance(price_val, str):
-                    import re
+            # Update price if we found a concrete one from comparison
+            best_price = price_data.get("best_price")
+            if best_price and product.get("price") in (
+                "Price not available",
+                "Price varies",
+                None,
+                "",
+            ):
+                product["price"] = best_price
 
-                    match = re.search(r"[\d,]+\.?\d*", price_val.replace(",", ""))
-                    if match:
-                        prices.append(float(match.group()))
-                elif isinstance(price_val, (int, float)):
-                    prices.append(float(price_val))
-            if prices:
-                min_price = min(prices)
-                report["price"] = f"${min_price:.2f}"
-                emit_progress(f"Best price for {product_name}: ${min_price:.2f}")
+            # Also try to extract a numeric price from the comparison results
+            if product.get("price") in (
+                "Price not available",
+                "Price varies",
+                None,
+                "",
+            ):
+                prices_found: list[float] = []
+                for rp in product.get("price_comparison", []):
+                    pv = rp.get("price", "")
+                    try:
+                        prices_found.append(
+                            float(str(pv).replace("$", "").replace(",", ""))
+                        )
+                    except (ValueError, TypeError):
+                        pass
+                if prices_found:
+                    product["price"] = f"${min(prices_found):.2f}"
+
+            emit_progress(
+                f"Best price for {name}: {product.get('price', 'N/A')}"
+            )
         except Exception as exc:
-            emit_progress(f"Error comparing prices for {product_name}: {exc}")
+            emit_progress(f"Error comparing prices for {name}: {exc}")
 
+    # ── Step 4: Normalise ──────────────────────────────────────
+    normalized = [normalize_product_data(p) for p in products]
+    state["detailed_products"] = normalized
+
+    # ── Step 5: Final recommendation ───────────────────────────
     emit_progress("Compiling final recommendation...")
-    response = scraper_formatter.format_results(state["detailed_reports"], state["query"])
+    recommendation = recommendation_agent.recommend(normalized, query)
+
     state["final_response"] = {
-        "products": state["detailed_reports"],
-        "final_recommendation": response.get(
-            "final_recommendation", "Here are the top products found."
-        ),
+        "products": normalized,
+        "final_recommendation": recommendation
+        or "Here are the top products found.",
     }
     emit_progress("Research complete!")
 
     return state
 
 
-class SimpleShoppingApp:
-    """Lightweight wrapper to maintain the .invoke interface used by FastAPI"""
+# ---------------------------------------------------------------------------
+# Thin wrapper to keep the .invoke() interface expected by main.py
+# ---------------------------------------------------------------------------
 
-    def invoke(self, initial_state: ShoppingState):
-        query = initial_state.get("query", "") if isinstance(initial_state, dict) else ""
+class SimpleShoppingApp:
+    def invoke(self, initial_state):
+        query = (
+            initial_state.get("query", "") if isinstance(initial_state, dict) else ""
+        )
         return run_shopping_pipeline(query)
 
 

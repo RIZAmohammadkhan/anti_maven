@@ -1,4 +1,28 @@
+import { useState } from 'react';
 import { generateStars, formatPrice } from '../utils';
+
+function ProductImage({ src, alt }) {
+  const [failed, setFailed] = useState(false);
+  const proxied = src ? `/api/image-proxy?url=${encodeURIComponent(src)}` : null;
+
+  if (!proxied || failed) {
+    return (
+      <div className="w-full h-48 bg-gradient-to-br from-gray-100 to-gray-50 flex items-center justify-center">
+        <i className="fa-solid fa-box-open text-4xl text-gray-300"></i>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={proxied}
+      alt={alt}
+      className="w-full h-48 object-contain bg-white p-2"
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
+}
 
 export default function ProductCard({ product, onDetails }) {
   const rating = product.rating || 4.0;
@@ -7,6 +31,9 @@ export default function ProductCard({ product, onDetails }) {
 
   return (
     <div className="min-w-[300px] md:min-w-[340px] snap-center bg-white rounded-3xl border border-gray-100 shadow-lg shadow-gray-200/50 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col overflow-hidden group h-full">
+      {/* Product Image */}
+      <ProductImage src={product.image_url} alt={product.name} />
+
       <div className="p-6 flex flex-col flex-grow">
         {/* Rating */}
         <div className="flex items-center gap-2 mb-3">
