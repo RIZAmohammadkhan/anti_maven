@@ -14,7 +14,7 @@ export default function LoadingTerminal({ logs, elapsed }) {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
-  const latestLog = logs.length > 0 ? logs[logs.length - 1] : 'Initializing agent graph...';
+  const latestLog = logs.length > 0 ? logs[logs.length - 1].text : 'Initializing agent graph...';
 
   return (
     <section className="flex flex-col items-center justify-center py-10 min-h-[60vh] animate-fade-in-up">
@@ -40,15 +40,15 @@ export default function LoadingTerminal({ logs, elapsed }) {
             <span className="ml-2 text-xs text-gray-400 font-mono">agent_stream.log</span>
           </div>
           <div className="p-4 h-64 overflow-y-auto font-mono text-sm terminal-scroll space-y-2">
-            {logs.map((msg, idx) => (
+            {logs.map((entry, idx) => (
               <div key={idx} className="text-green-400 animate-fade-in-up">
                 <span className="text-gray-500 mr-2">
-                  [{new Date().toLocaleTimeString().split(' ')[0]}]
+                  [{entry.time.toLocaleTimeString().split(' ')[0]}]
                 </span>
                 {'> '}
                 <span
                   dangerouslySetInnerHTML={{
-                    __html: msg.replace(
+                    __html: entry.text.replace(
                       /(Manager|Researcher|Specialist|Formatter|Agent)/g,
                       '<span class="text-blue-400 font-bold">$1</span>'
                     ),

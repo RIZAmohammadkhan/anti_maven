@@ -125,7 +125,7 @@ export default function DashboardPage() {
     es.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'progress') {
-        setLogs((prev) => [...prev, data.message]);
+        setLogs((prev) => [...prev, { text: data.message, time: new Date() }]);
       } else if (data.type === 'complete') {
         clearInterval(timerRef.current);
         setResults(data.data);
