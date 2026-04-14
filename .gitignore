@@ -7,3 +7,10 @@ node_modules/
 dist/
 *.db
 backend/maven.db
+docs/
+backend/evaluation/runs/run_*/
+backend/evaluation/reports/summary.json
+backend/evaluation/reports/scores.csv
+backend/evaluation/reports/failure_taxonomy.csv
+backend/evaluation/reports/report.md
+__main__.py
